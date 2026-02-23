@@ -1,6 +1,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import imagehash
+import numpy as np
 import pytest
 
 from imgdedup.main import (
@@ -10,6 +12,14 @@ from imgdedup.main import (
     parse_args,
     resolve_deletions,
 )
+
+
+def _make_hash(value: int) -> imagehash.ImageHash:
+    bits = np.zeros((8, 8), dtype=bool)
+    for i in range(64):
+        if value & (1 << i):
+            bits[i // 8][i % 8] = True
+    return imagehash.ImageHash(bits)
 
 
 class TestBuildDuplicateGroups:
@@ -67,28 +77,18 @@ class TestFindVideoDuplicates:
         (tmp_path / "b.mp4").touch()
         (tmp_path / "c.mp4").touch()
 
-        mock_hashes = {}
-        for name in ["a.mp4", "b.mp4", "c.mp4"]:
-            m = MagicMock()
-            m.delete_storage_path = MagicMock()
-            mock_hashes[name] = m
+        hash_a = _make_hash(0)
+        hash_b = _make_hash(1)
+        hash_c = _make_hash(0xFFFF)
 
-        mock_hashes["a.mp4"].__sub__ = lambda self, other: (
-            5 if other is mock_hashes["b.mp4"] else 20
-        )
-        mock_hashes["b.mp4"].__sub__ = lambda self, other: (
-            5 if other is mock_hashes["a.mp4"] else 20
-        )
-        mock_hashes["a.mp4"].__sub__ = lambda self, other: (
-            5 if other is mock_hashes["b.mp4"] else 20
-        )
-        mock_hashes["c.mp4"].__sub__ = lambda self, other: 20
-
-        def mock_videohash(path: str):
+        def mock_extract(path, ffmpeg):
             name = Path(path).name
-            return mock_hashes[name]
+            return {"a.mp4": hash_a, "b.mp4": hash_b, "c.mp4": hash_c}[name]
 
-        with patch("imgdedup.main.VideoHash", side_effect=mock_videohash):
+        with (
+            patch("imgdedup.main._extract_frame_hash", side_effect=mock_extract),
+            patch("imgdedup.main._get_ffmpeg", return_value="/usr/bin/ffmpeg"),
+        ):
             result = find_video_duplicates(tmp_path, threshold=10)
 
         assert "b.mp4" in result["a.mp4"]
@@ -100,7 +100,13 @@ class TestFindVideoDuplicates:
     ):
         (tmp_path / "bad.mov").touch()
 
-        with patch("imgdedup.main.VideoHash", side_effect=Exception("corrupt")):
+        with (
+            patch(
+                "imgdedup.main._extract_frame_hash",
+                side_effect=Exception("corrupt"),
+            ),
+            patch("imgdedup.main._get_ffmpeg", return_value="/usr/bin/ffmpeg"),
+        ):
             result = find_video_duplicates(tmp_path, threshold=10)
 
         assert result == {}

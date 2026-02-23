@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
   "imagededup>=0.3.2",
-  "videohash2>=3.2.2",
+  "imagehash>=4.3",
 ]
 
 [project.scripts]

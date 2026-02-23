@@ -2,43 +2,13 @@ import argparse
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
+import imagehash
 from imagededup.methods import AHash, DHash, PHash, WHash
-
-import videohash2.videoduration as _vd
-import videohash2.videohash as _vh
-
-
-def _video_duration_fixed(path: str | None = None, **_kwargs: object) -> float:
-    ffprobe_path = shutil.which("ffprobe")
-    if not ffprobe_path:
-        raise RuntimeError("ffprobe not found on PATH")
-    result = subprocess.run(
-        [
-            ffprobe_path,
-            "-v",
-            "quiet",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "csv=p=0",
-            path,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    output = result.stdout.strip()
-    if not output:
-        raise RuntimeError(f"ffprobe could not determine duration for {path}")
-    return float(output)
-
-
-_vd.video_duration = _video_duration_fixed
-_vh.video_duration = _video_duration_fixed
-
-from videohash2 import VideoHash  # noqa: E402
+from PIL import Image
 
 HASHERS = {
     "phash": PHash,
@@ -59,6 +29,36 @@ VIDEO_EXTENSIONS = {
     ".m4v",
     ".3gp",
 }
+
+
+def _get_ffmpeg() -> str:
+    path = shutil.which("ffmpeg")
+    if not path:
+        raise RuntimeError("ffmpeg not found on PATH")
+    return path
+
+
+def _extract_frame_hash(video_path: Path, ffmpeg: str) -> imagehash.ImageHash:
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=True) as tmp:
+        subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-ss",
+                "1",
+                "-i",
+                str(video_path),
+                "-frames:v",
+                "1",
+                "-q:v",
+                "2",
+                tmp.name,
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+        img = Image.open(tmp.name)
+        return imagehash.phash(img)
 
 
 def build_duplicate_groups(duplicates: Mapping[str, list[str]]) -> list[set[str]]:
@@ -97,14 +97,15 @@ def resolve_deletions(groups: list[set[str]], directory: Path) -> list[Path]:
 
 
 def find_video_duplicates(directory: Path, threshold: int) -> dict[str, list[str]]:
+    ffmpeg = _get_ffmpeg()
     video_files = sorted(
         f for f in directory.iterdir() if f.suffix.lower() in VIDEO_EXTENSIONS
     )
 
-    hashes: dict[str, VideoHash] = {}
+    hashes: dict[str, imagehash.ImageHash] = {}
     for f in video_files:
         try:
-            hashes[f.name] = VideoHash(path=str(f))
+            hashes[f.name] = _extract_frame_hash(f, ffmpeg)
         except Exception as e:
             print(f"  Warning: skipping {f.name}: {e}", file=sys.stderr)
 
@@ -117,9 +118,6 @@ def find_video_duplicates(directory: Path, threshold: int) -> dict[str, list[str
             if distance <= threshold:
                 duplicates[names[i]].append(names[j])
                 duplicates[names[j]].append(names[i])
-
-    for vh in hashes.values():
-        vh.delete_storage_path()
 
     return duplicates
 
