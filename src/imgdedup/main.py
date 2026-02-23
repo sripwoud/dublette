@@ -39,8 +39,11 @@ def _get_ffmpeg() -> str:
 
 
 def _extract_frame_hash(video_path: Path, ffmpeg: str) -> imagehash.ImageHash:
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=True) as tmp:
-        subprocess.run(
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        result = subprocess.run(
             [
                 ffmpeg,
                 "-y",
@@ -50,15 +53,21 @@ def _extract_frame_hash(video_path: Path, ffmpeg: str) -> imagehash.ImageHash:
                 str(video_path),
                 "-frames:v",
                 "1",
-                "-q:v",
-                "2",
-                tmp.name,
+                tmp_path,
             ],
             capture_output=True,
             timeout=30,
         )
-        img = Image.open(tmp.name)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"ffmpeg failed (exit {result.returncode}): {result.stderr.decode(errors='replace').strip()}"
+            )
+        if not Path(tmp_path).stat().st_size:
+            raise RuntimeError("ffmpeg produced empty output")
+        img = Image.open(tmp_path)
         return imagehash.phash(img)
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
 
 
 def build_duplicate_groups(duplicates: Mapping[str, list[str]]) -> list[set[str]]:
