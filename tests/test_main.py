@@ -1,21 +1,15 @@
-import shutil
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from imgdedup.main import build_duplicate_groups, main, parse_args, resolve_deletions
-
-
-@pytest.fixture
-def image_dir(tmp_path: Path) -> Path:
-    fixtures = Path(__file__).parent / "fixtures"
-    if fixtures.exists():
-        shutil.copytree(fixtures, tmp_path / "images")
-        return tmp_path / "images"
-    d = tmp_path / "images"
-    d.mkdir()
-    return d
+from imgdedup.main import (
+    build_duplicate_groups,
+    find_video_duplicates,
+    main,
+    parse_args,
+    resolve_deletions,
+)
 
 
 class TestBuildDuplicateGroups:
@@ -67,6 +61,52 @@ class TestResolveDeletions:
         assert resolve_deletions([], tmp_path) == []
 
 
+class TestFindVideoDuplicates:
+    def test_pairwise_comparison(self, tmp_path: Path):
+        (tmp_path / "a.mp4").touch()
+        (tmp_path / "b.mp4").touch()
+        (tmp_path / "c.mp4").touch()
+
+        mock_hashes = {}
+        for name in ["a.mp4", "b.mp4", "c.mp4"]:
+            m = MagicMock()
+            m.delete_storage_path = MagicMock()
+            mock_hashes[name] = m
+
+        mock_hashes["a.mp4"].__sub__ = lambda self, other: (
+            5 if other is mock_hashes["b.mp4"] else 20
+        )
+        mock_hashes["b.mp4"].__sub__ = lambda self, other: (
+            5 if other is mock_hashes["a.mp4"] else 20
+        )
+        mock_hashes["a.mp4"].__sub__ = lambda self, other: (
+            5 if other is mock_hashes["b.mp4"] else 20
+        )
+        mock_hashes["c.mp4"].__sub__ = lambda self, other: 20
+
+        def mock_videohash(path: str):
+            name = Path(path).name
+            return mock_hashes[name]
+
+        with patch("imgdedup.main.VideoHash", side_effect=mock_videohash):
+            result = find_video_duplicates(tmp_path, threshold=10)
+
+        assert "b.mp4" in result["a.mp4"]
+        assert "a.mp4" in result["b.mp4"]
+        assert result["c.mp4"] == []
+
+    def test_skips_corrupt_videos(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        (tmp_path / "bad.mov").touch()
+
+        with patch("imgdedup.main.VideoHash", side_effect=Exception("corrupt")):
+            result = find_video_duplicates(tmp_path, threshold=10)
+
+        assert result == {}
+        assert "skipping bad.mov" in capsys.readouterr().err
+
+
 class TestParseArgs:
     def test_defaults(self):
         args = parse_args(["/some/dir"])
@@ -74,12 +114,18 @@ class TestParseArgs:
         assert args.method == "phash"
         assert args.threshold == 10
         assert args.dry_run is False
+        assert args.only is None
 
     def test_all_flags(self):
-        args = parse_args(["/img", "-m", "ahash", "-t", "5", "-n"])
+        args = parse_args(["/img", "-m", "ahash", "-t", "5", "-n", "--only", "videos"])
         assert args.method == "ahash"
         assert args.threshold == 5
         assert args.dry_run is True
+        assert args.only == "videos"
+
+    def test_only_images(self):
+        args = parse_args(["/img", "--only", "images"])
+        assert args.only == "images"
 
 
 class TestMain:
@@ -91,16 +137,33 @@ class TestMain:
         d = tmp_path / "empty"
         d.mkdir()
         main([str(d)])
-        assert "No images found" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "No images found" in out
+        assert "No videos found" in out
 
     def _make_mock_hasher(self, fake_duplicates: dict[str, list[str]]):
-        from unittest.mock import MagicMock
-
         mock_cls = MagicMock()
         mock_cls.return_value.find_duplicates.return_value = fake_duplicates
         return mock_cls
 
-    def test_dry_run_no_deletion(
+    def test_dry_run_images(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        d = tmp_path / "imgs"
+        d.mkdir()
+        (d / "a.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
+        (d / "b.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
+
+        fake_duplicates = {"a.jpg": ["b.jpg"], "b.jpg": ["a.jpg"]}
+        mock_hasher = self._make_mock_hasher(fake_duplicates)
+
+        with patch.dict("imgdedup.main.HASHERS", {"phash": mock_hasher}):
+            main([str(d), "-n", "--only", "images"])
+
+        assert (d / "a.jpg").exists()
+        assert (d / "b.jpg").exists()
+        output = capsys.readouterr().out
+        assert "dry run" in output
+
+    def test_actual_deletion_images(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ):
         d = tmp_path / "imgs"
@@ -112,25 +175,30 @@ class TestMain:
         mock_hasher = self._make_mock_hasher(fake_duplicates)
 
         with patch.dict("imgdedup.main.HASHERS", {"phash": mock_hasher}):
-            main([str(d), "-n"])
-
-        assert (d / "a.jpg").exists()
-        assert (d / "b.jpg").exists()
-        output = capsys.readouterr().out
-        assert "dry run" in output
-
-    def test_actual_deletion(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
-        d = tmp_path / "imgs"
-        d.mkdir()
-        (d / "a.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
-        (d / "b.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
-
-        fake_duplicates = {"a.jpg": ["b.jpg"], "b.jpg": ["a.jpg"]}
-        mock_hasher = self._make_mock_hasher(fake_duplicates)
-
-        with patch.dict("imgdedup.main.HASHERS", {"phash": mock_hasher}):
-            main([str(d)])
+            main([str(d), "--only", "images"])
 
         assert (d / "a.jpg").exists()
         assert not (d / "b.jpg").exists()
         assert "Removed 1" in capsys.readouterr().out
+
+    def test_only_videos_skips_images(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        d = tmp_path / "mixed"
+        d.mkdir()
+        (d / "a.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
+        main([str(d), "--only", "videos"])
+        out = capsys.readouterr().out
+        assert "No videos found" in out
+        assert "image" not in out.lower()
+
+    def test_only_images_skips_videos(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        d = tmp_path / "mixed"
+        d.mkdir()
+        (d / "a.mp4").touch()
+        main([str(d), "--only", "images"])
+        out = capsys.readouterr().out
+        assert "No images found" in out
+        assert "video" not in out.lower()

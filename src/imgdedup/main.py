@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from imagededup.methods import AHash, DHash, PHash, WHash
+from videohash2 import VideoHash
 
 HASHERS = {
     "phash": PHash,
@@ -13,6 +14,17 @@ HASHERS = {
 }
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".webp"}
+VIDEO_EXTENSIONS = {
+    ".mp4",
+    ".mov",
+    ".avi",
+    ".mkv",
+    ".wmv",
+    ".flv",
+    ".webm",
+    ".m4v",
+    ".3gp",
+}
 
 
 def build_duplicate_groups(duplicates: Mapping[str, list[str]]) -> list[set[str]]:
@@ -50,32 +62,48 @@ def resolve_deletions(groups: list[set[str]], directory: Path) -> list[Path]:
     return to_delete
 
 
-def run(directory: Path, method: str, threshold: int, dry: bool) -> None:
-    if not directory.is_dir():
-        print(f"Error: {directory} is not a directory", file=sys.stderr)
-        sys.exit(1)
-
-    image_count = sum(
-        1 for f in directory.iterdir() if f.suffix.lower() in IMAGE_EXTENSIONS
-    )
-    if image_count == 0:
-        print(f"No images found in {directory}")
-        return
-
-    hasher = HASHERS[method]()
-    duplicates = hasher.find_duplicates(
-        image_dir=str(directory), max_distance_threshold=threshold
+def find_video_duplicates(directory: Path, threshold: int) -> dict[str, list[str]]:
+    video_files = sorted(
+        f for f in directory.iterdir() if f.suffix.lower() in VIDEO_EXTENSIONS
     )
 
-    groups = build_duplicate_groups(duplicates)
+    hashes: dict[str, VideoHash] = {}
+    for f in video_files:
+        try:
+            hashes[f.name] = VideoHash(path=str(f))
+        except Exception as e:
+            print(f"  Warning: skipping {f.name}: {e}", file=sys.stderr)
+
+    duplicates: dict[str, list[str]] = {name: [] for name in hashes}
+    names = list(hashes.keys())
+
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            distance = hashes[names[i]] - hashes[names[j]]
+            if distance <= threshold:
+                duplicates[names[i]].append(names[j])
+                duplicates[names[j]].append(names[i])
+
+    for vh in hashes.values():
+        vh.delete_storage_path()
+
+    return duplicates
+
+
+def report_and_delete(
+    label: str,
+    groups: list[set[str]],
+    directory: Path,
+    dry: bool,
+) -> int:
     if not groups:
-        print("No duplicates found.")
-        return
+        print(f"No duplicate {label} found.")
+        return 0
 
     to_delete = resolve_deletions(groups, directory)
 
     print(
-        f"Found {len(groups)} duplicate group(s), {len(to_delete)} file(s) to remove:\n"
+        f"Found {len(groups)} duplicate {label} group(s), {len(to_delete)} file(s) to remove:\n"
     )
     for i, group in enumerate(groups, 1):
         sorted_files = sorted(group)
@@ -86,30 +114,75 @@ def run(directory: Path, method: str, threshold: int, dry: bool) -> None:
         print()
 
     if dry:
-        print("[dry run] No files were deleted.")
-        return
+        return len(to_delete)
 
     for path in to_delete:
         path.unlink()
         print(f"  Deleted: {path}")
 
-    print(f"\nRemoved {len(to_delete)} duplicate(s).")
+    return len(to_delete)
+
+
+def run(
+    directory: Path,
+    method: str,
+    threshold: int,
+    dry: bool,
+    only: str,
+) -> None:
+    if not directory.is_dir():
+        print(f"Error: {directory} is not a directory", file=sys.stderr)
+        sys.exit(1)
+
+    total_deleted = 0
+
+    if only in (None, "images"):
+        image_count = sum(
+            1 for f in directory.iterdir() if f.suffix.lower() in IMAGE_EXTENSIONS
+        )
+        if image_count == 0:
+            print("No images found.")
+        else:
+            print(f"Scanning {image_count} image(s)...")
+            hasher = HASHERS[method]()
+            duplicates = hasher.find_duplicates(
+                image_dir=str(directory), max_distance_threshold=threshold
+            )
+            groups = build_duplicate_groups(duplicates)
+            total_deleted += report_and_delete("image", groups, directory, dry)
+
+    if only in (None, "videos"):
+        video_count = sum(
+            1 for f in directory.iterdir() if f.suffix.lower() in VIDEO_EXTENSIONS
+        )
+        if video_count == 0:
+            print("No videos found.")
+        else:
+            print(f"Scanning {video_count} video(s)...")
+            duplicates = find_video_duplicates(directory, threshold)
+            groups = build_duplicate_groups(duplicates)
+            total_deleted += report_and_delete("video", groups, directory, dry)
+
+    if dry:
+        print(f"\n[dry run] {total_deleted} file(s) would be deleted.")
+    elif total_deleted:
+        print(f"\nRemoved {total_deleted} duplicate(s) total.")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="imgdedup",
-        description="Deduplicate images using perceptual hashing.",
+        description="Deduplicate images and videos using perceptual hashing.",
     )
     parser.add_argument(
-        "directory", type=Path, help="Folder containing images to deduplicate"
+        "directory", type=Path, help="Folder containing media to deduplicate"
     )
     parser.add_argument(
         "-m",
         "--method",
         choices=HASHERS.keys(),
         default="phash",
-        help="Hashing method (default: phash)",
+        help="Image hashing method (default: phash)",
     )
     parser.add_argument(
         "-t",
@@ -124,12 +197,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="List duplicates without deleting",
     )
+    parser.add_argument(
+        "--only",
+        choices=("images", "videos"),
+        default=None,
+        help="Process only images or only videos (omit to process all)",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    run(args.directory, args.method, args.threshold, args.dry_run)
+    run(args.directory, args.method, args.threshold, args.dry_run, args.only)
 
 
 if __name__ == "__main__":

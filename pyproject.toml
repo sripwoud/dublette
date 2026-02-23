@@ -1,11 +1,12 @@
 [project]
 name = "imgdedup"
 version = "0.1.0"
-description = "Deduplicate images using perceptual hashing"
+description = "Deduplicate images and videos using perceptual hashing"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
   "imagededup>=0.3.2",
+  "videohash2>=3.2.2",
 ]
 
 [project.scripts]
