@@ -1,10 +1,44 @@
 import argparse
+import shutil
+import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
 
 from imagededup.methods import AHash, DHash, PHash, WHash
-from videohash2 import VideoHash
+
+import videohash2.videoduration as _vd
+import videohash2.videohash as _vh
+
+
+def _video_duration_fixed(path: str | None = None, **_kwargs: object) -> float:
+    ffprobe_path = shutil.which("ffprobe")
+    if not ffprobe_path:
+        raise RuntimeError("ffprobe not found on PATH")
+    result = subprocess.run(
+        [
+            ffprobe_path,
+            "-v",
+            "quiet",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+            path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout.strip()
+    if not output:
+        raise RuntimeError(f"ffprobe could not determine duration for {path}")
+    return float(output)
+
+
+_vd.video_duration = _video_duration_fixed
+_vh.video_duration = _video_duration_fixed
+
+from videohash2 import VideoHash  # noqa: E402
 
 HASHERS = {
     "phash": PHash,
@@ -208,7 +242,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    run(args.directory, args.method, args.threshold, args.dry_run, args.only)
+    try:
+        run(args.directory, args.method, args.threshold, args.dry_run, args.only)
+    except KeyboardInterrupt:
+        print("\nInterrupted.", file=sys.stderr)
+        sys.exit(130)
 
 
 if __name__ == "__main__":
