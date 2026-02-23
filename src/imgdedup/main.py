@@ -38,34 +38,31 @@ def _get_ffmpeg() -> str:
     return path
 
 
+def _run_ffmpeg_extract(
+    ffmpeg: str, video_path: str, seek: str, output: str
+) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        [ffmpeg, "-y", "-ss", seek, "-i", video_path, "-frames:v", "1", output],
+        capture_output=True,
+        timeout=30,
+    )
+
+
 def _extract_frame_hash(video_path: Path, ffmpeg: str) -> imagehash.ImageHash:
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         tmp_path = tmp.name
 
     try:
-        result = subprocess.run(
-            [
-                ffmpeg,
-                "-y",
-                "-ss",
-                "1",
-                "-i",
-                str(video_path),
-                "-frames:v",
-                "1",
-                tmp_path,
-            ],
-            capture_output=True,
-            timeout=30,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"ffmpeg failed (exit {result.returncode}): {result.stderr.decode(errors='replace').strip()}"
-            )
-        if not Path(tmp_path).stat().st_size:
-            raise RuntimeError("ffmpeg produced empty output")
-        img = Image.open(tmp_path)
-        return imagehash.phash(img)
+        for seek in ("1", "0"):
+            result = _run_ffmpeg_extract(ffmpeg, str(video_path), seek, tmp_path)
+            if result.returncode != 0:
+                continue
+            if Path(tmp_path).stat().st_size > 0:
+                img = Image.open(tmp_path)
+                return imagehash.phash(img)
+
+        stderr = result.stderr.decode(errors="replace").strip()
+        raise RuntimeError(f"ffmpeg could not extract frame: {stderr}")
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
