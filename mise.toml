@@ -1,7 +1,7 @@
 [tasks.run]
 alias = "r"
-description = "Run main.py"
-run = "python src/my_pkg/main.py"
+description = "Run imgdedup"
+run = "uv run imgdedup"
 
 [tasks.test]
 alias = "t"
