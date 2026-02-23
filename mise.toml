@@ -1,0 +1,17 @@
+[tasks.run]
+alias = "r"
+description = "Run main.py"
+run = "python src/my_pkg/main.py"
+
+[tasks.test]
+alias = "t"
+description = "Run tests"
+run = "uv run pytest"
+
+[tools]
+"cargo:convco" = "latest"
+dprint = "latest"
+hk = "latest"
+pkl = "latest"
+ruff = "latest"
+uv = "latest"
