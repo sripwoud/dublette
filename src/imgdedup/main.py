@@ -105,10 +105,42 @@ def resolve_deletions(groups: list[set[str]], directory: Path) -> list[Path]:
     return to_delete
 
 
+MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+
+
+def delete_empty_files(directory: Path, dry: bool) -> int:
+    empty = sorted(
+        f
+        for f in directory.iterdir()
+        if f.is_file()
+        and f.suffix.lower() in MEDIA_EXTENSIONS
+        and f.stat().st_size == 0
+    )
+    if not empty:
+        return 0
+
+    print(f"Found {len(empty)} empty (0-byte) file(s):\n")
+    for f in empty:
+        print(f"    {f.name}")
+
+    if dry:
+        print()
+        return len(empty)
+
+    print()
+    for f in empty:
+        f.unlink()
+        print(f"  Deleted: {f}")
+
+    return len(empty)
+
+
 def find_video_duplicates(directory: Path, threshold: int) -> dict[str, list[str]]:
     ffmpeg = _get_ffmpeg()
     video_files = sorted(
-        f for f in directory.iterdir() if f.suffix.lower() in VIDEO_EXTENSIONS
+        f
+        for f in directory.iterdir()
+        if f.suffix.lower() in VIDEO_EXTENSIONS and f.stat().st_size > 0
     )
 
     hashes: dict[str, imagehash.ImageHash] = {}
@@ -170,6 +202,7 @@ def run(
     threshold: int,
     dry: bool,
     only: str,
+    delete_empty: bool,
 ) -> None:
     if not directory.is_dir():
         print(f"Error: {directory} is not a directory", file=sys.stderr)
@@ -177,9 +210,14 @@ def run(
 
     total_deleted = 0
 
+    if delete_empty:
+        total_deleted += delete_empty_files(directory, dry)
+
     if only in (None, "images"):
         image_count = sum(
-            1 for f in directory.iterdir() if f.suffix.lower() in IMAGE_EXTENSIONS
+            1
+            for f in directory.iterdir()
+            if f.suffix.lower() in IMAGE_EXTENSIONS and f.stat().st_size > 0
         )
         if image_count == 0:
             print("No images found.")
@@ -244,13 +282,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Process only images or only videos (omit to process all)",
     )
+    parser.add_argument(
+        "--delete-empty",
+        action="store_true",
+        help="Delete 0-byte media files",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     try:
-        run(args.directory, args.method, args.threshold, args.dry_run, args.only)
+        run(
+            args.directory,
+            args.method,
+            args.threshold,
+            args.dry_run,
+            args.only,
+            args.delete_empty,
+        )
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         sys.exit(130)

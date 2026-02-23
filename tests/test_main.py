@@ -7,6 +7,7 @@ import pytest
 
 from imgdedup.main import (
     build_duplicate_groups,
+    delete_empty_files,
     find_video_duplicates,
     main,
     parse_args,
@@ -71,11 +72,39 @@ class TestResolveDeletions:
         assert resolve_deletions([], tmp_path) == []
 
 
+class TestDeleteEmptyFiles:
+    def test_finds_empty_media_files(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        (tmp_path / "empty.jpg").touch()
+        (tmp_path / "empty.mov").touch()
+        (tmp_path / "nonempty.jpg").write_bytes(b"\xff\xd8" + b"\x00" * 10)
+        (tmp_path / "empty.txt").touch()
+
+        count = delete_empty_files(tmp_path, dry=True)
+        assert count == 2
+        assert (tmp_path / "empty.jpg").exists()
+        assert "empty.jpg" in capsys.readouterr().out
+
+    def test_deletes_empty_files(self, tmp_path: Path):
+        (tmp_path / "empty.mp4").touch()
+        (tmp_path / "good.mp4").write_bytes(b"\x00" * 10)
+
+        count = delete_empty_files(tmp_path, dry=False)
+        assert count == 1
+        assert not (tmp_path / "empty.mp4").exists()
+        assert (tmp_path / "good.mp4").exists()
+
+    def test_no_empty_files(self, tmp_path: Path):
+        (tmp_path / "a.jpg").write_bytes(b"\xff")
+        assert delete_empty_files(tmp_path, dry=False) == 0
+
+
 class TestFindVideoDuplicates:
     def test_pairwise_comparison(self, tmp_path: Path):
-        (tmp_path / "a.mp4").touch()
-        (tmp_path / "b.mp4").touch()
-        (tmp_path / "c.mp4").touch()
+        (tmp_path / "a.mp4").write_bytes(b"\x00" * 10)
+        (tmp_path / "b.mp4").write_bytes(b"\x00" * 10)
+        (tmp_path / "c.mp4").write_bytes(b"\x00" * 10)
 
         hash_a = _make_hash(0)
         hash_b = _make_hash(1)
@@ -98,7 +127,7 @@ class TestFindVideoDuplicates:
     def test_skips_corrupt_videos(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ):
-        (tmp_path / "bad.mov").touch()
+        (tmp_path / "bad.mov").write_bytes(b"\x00" * 10)
 
         with (
             patch(
@@ -121,13 +150,27 @@ class TestParseArgs:
         assert args.threshold == 10
         assert args.dry_run is False
         assert args.only is None
+        assert args.delete_empty is False
 
     def test_all_flags(self):
-        args = parse_args(["/img", "-m", "ahash", "-t", "5", "-n", "--only", "videos"])
+        args = parse_args(
+            [
+                "/img",
+                "-m",
+                "ahash",
+                "-t",
+                "5",
+                "-n",
+                "--only",
+                "videos",
+                "--delete-empty",
+            ]
+        )
         assert args.method == "ahash"
         assert args.threshold == 5
         assert args.dry_run is True
         assert args.only == "videos"
+        assert args.delete_empty is True
 
     def test_only_images(self):
         args = parse_args(["/img", "--only", "images"])
