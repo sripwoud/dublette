@@ -1,3 +1,4 @@
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -6,8 +7,10 @@ import numpy as np
 import pytest
 
 from PIL import Image as PILImage
+from rich.console import Console
 
 from imgdedup.main import (
+    UI,
     build_duplicate_groups,
     delete_empty_files,
     find_image_duplicates,
@@ -28,6 +31,16 @@ def _make_hash(value: int) -> imagehash.ImageHash:
 
 def _make_image(path: Path) -> None:
     PILImage.new("RGB", (1, 1), color="red").save(path)
+
+
+def _make_ui() -> tuple[UI, StringIO, StringIO]:
+    stderr_buf = StringIO()
+    stdout_buf = StringIO()
+    ui = UI(
+        console=Console(file=stderr_buf, no_color=True),
+        output=Console(file=stdout_buf, no_color=True),
+    )
+    return ui, stderr_buf, stdout_buf
 
 
 class TestBuildDuplicateGroups:
@@ -80,31 +93,32 @@ class TestResolveDeletions:
 
 
 class TestDeleteEmptyFiles:
-    def test_finds_empty_media_files(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ):
+    def test_finds_empty_media_files(self, tmp_path: Path):
         (tmp_path / "empty.jpg").touch()
         (tmp_path / "empty.mov").touch()
         (tmp_path / "nonempty.jpg").write_bytes(b"\xff\xd8" + b"\x00" * 10)
         (tmp_path / "empty.txt").touch()
 
-        count = delete_empty_files(tmp_path, dry=True)
+        ui, _stderr_buf, stdout_buf = _make_ui()
+        count = delete_empty_files(tmp_path, dry=True, ui=ui)
         assert count == 2
         assert (tmp_path / "empty.jpg").exists()
-        assert "empty.jpg" in capsys.readouterr().out
+        assert "empty.jpg" in stdout_buf.getvalue()
 
     def test_deletes_empty_files(self, tmp_path: Path):
         (tmp_path / "empty.mp4").touch()
         (tmp_path / "good.mp4").write_bytes(b"\x00" * 10)
 
-        count = delete_empty_files(tmp_path, dry=False)
+        ui, _stderr_buf, _stdout_buf = _make_ui()
+        count = delete_empty_files(tmp_path, dry=False, ui=ui)
         assert count == 1
         assert not (tmp_path / "empty.mp4").exists()
         assert (tmp_path / "good.mp4").exists()
 
     def test_no_empty_files(self, tmp_path: Path):
         (tmp_path / "a.jpg").write_bytes(b"\xff")
-        assert delete_empty_files(tmp_path, dry=False) == 0
+        ui, _stderr_buf, _stdout_buf = _make_ui()
+        assert delete_empty_files(tmp_path, dry=False, ui=ui) == 0
 
     def test_recurses_into_subdirs(self, tmp_path: Path):
         sub = tmp_path / "sub"
@@ -112,7 +126,8 @@ class TestDeleteEmptyFiles:
         (sub / "empty.png").touch()
         (tmp_path / "empty.jpg").touch()
 
-        count = delete_empty_files(tmp_path, dry=True)
+        ui, _stderr_buf, _stdout_buf = _make_ui()
+        count = delete_empty_files(tmp_path, dry=True, ui=ui)
         assert count == 2
 
 
@@ -128,11 +143,12 @@ class TestFindImageDuplicates:
 
         hash_map = {"a.jpg": hash_a, "b.jpg": hash_b, "c.jpg": hash_c}
 
+        ui, _stderr_buf, _stdout_buf = _make_ui()
         with patch(
             "imgdedup.main.imagehash.phash",
             side_effect=lambda img: hash_map[Path(img.filename).name],
         ):
-            result = find_image_duplicates(tmp_path, threshold=9)
+            result = find_image_duplicates(tmp_path, threshold=9, ui=ui)
 
         assert "b.jpg" in result["a.jpg"]
         assert "a.jpg" in result["b.jpg"]
@@ -146,8 +162,9 @@ class TestFindImageDuplicates:
 
         same_hash = _make_hash(42)
 
+        ui, _stderr_buf, _stdout_buf = _make_ui()
         with patch("imgdedup.main.imagehash.phash", return_value=same_hash):
-            result = find_image_duplicates(tmp_path, threshold=9)
+            result = find_image_duplicates(tmp_path, threshold=9, ui=ui)
 
         keys = list(result.keys())
         assert len(keys) == 2
@@ -168,21 +185,21 @@ class TestFindVideoDuplicates:
             name = Path(path).name
             return {"a.mp4": hash_a, "b.mp4": hash_b, "c.mp4": hash_c}[name]
 
+        ui, _stderr_buf, _stdout_buf = _make_ui()
         with (
             patch("imgdedup.main._extract_frame_hash", side_effect=mock_extract),
             patch("imgdedup.main._get_ffmpeg", return_value="/usr/bin/ffmpeg"),
         ):
-            result = find_video_duplicates(tmp_path, threshold=9)
+            result = find_video_duplicates(tmp_path, threshold=9, ui=ui)
 
         assert "b.mp4" in result["a.mp4"]
         assert "a.mp4" in result["b.mp4"]
         assert result["c.mp4"] == []
 
-    def test_skips_corrupt_videos(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ):
+    def test_skips_corrupt_videos(self, tmp_path: Path):
         (tmp_path / "bad.mov").write_bytes(b"\x00" * 10)
 
+        ui, stderr_buf, _stdout_buf = _make_ui()
         with (
             patch(
                 "imgdedup.main._extract_frame_hash",
@@ -190,10 +207,10 @@ class TestFindVideoDuplicates:
             ),
             patch("imgdedup.main._get_ffmpeg", return_value="/usr/bin/ffmpeg"),
         ):
-            result = find_video_duplicates(tmp_path, threshold=9)
+            result = find_video_duplicates(tmp_path, threshold=9, ui=ui)
 
         assert result == {}
-        assert "skipping bad.mov" in capsys.readouterr().err
+        assert "skipping bad.mov" in stderr_buf.getvalue()
 
 
 class TestParseArgs:

@@ -4,10 +4,12 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import imagehash
 from PIL import Image
+from rich.console import Console
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".webp"}
 VIDEO_EXTENSIONS = {
@@ -22,6 +24,14 @@ VIDEO_EXTENSIONS = {
     ".3gp",
 }
 MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+
+
+@dataclass
+class UI:
+    console: Console = field(default_factory=lambda: Console(stderr=True))
+    output: Console = field(default_factory=lambda: Console())
+    quiet: bool = False
+    verbose: bool = False
 
 
 def _get_ffmpeg() -> str:
@@ -107,7 +117,7 @@ def resolve_deletions(groups: list[set[str]], directory: Path) -> list[Path]:
     return to_delete
 
 
-def delete_empty_files(directory: Path, dry: bool) -> int:
+def delete_empty_files(directory: Path, dry: bool, ui: UI) -> int:
     pattern = directory.rglob("*")
     empty = sorted(
         f
@@ -119,23 +129,25 @@ def delete_empty_files(directory: Path, dry: bool) -> int:
     if not empty:
         return 0
 
-    print(f"Found {len(empty)} empty (0-byte) file(s):\n")
+    ui.output.print(f"Found {len(empty)} empty (0-byte) file(s):\n")
     for f in empty:
-        print(f"    {f.relative_to(directory)}")
+        ui.output.print(f"    {f.relative_to(directory)}")
 
     if dry:
-        print()
+        ui.output.print()
         return len(empty)
 
-    print()
+    ui.output.print()
     for f in empty:
         f.unlink()
-        print(f"  Deleted: {f}")
+        ui.console.print(f"  Deleted: {f}")
 
     return len(empty)
 
 
-def find_image_duplicates(directory: Path, threshold: int) -> dict[str, list[str]]:
+def find_image_duplicates(
+    directory: Path, threshold: int, ui: UI
+) -> dict[str, list[str]]:
     image_files = _collect_files(directory, IMAGE_EXTENSIONS)
 
     hashes: dict[str, imagehash.ImageHash] = {}
@@ -144,7 +156,7 @@ def find_image_duplicates(directory: Path, threshold: int) -> dict[str, list[str
             img = Image.open(f)
             hashes[_relative_key(f, directory)] = imagehash.phash(img)
         except Exception as e:
-            print(f"  Warning: skipping {f.name}: {e}", file=sys.stderr)
+            ui.console.print(f"  Warning: skipping {f.name}: {e}")
 
     duplicates: dict[str, list[str]] = {name: [] for name in hashes}
     names = list(hashes.keys())
@@ -159,7 +171,9 @@ def find_image_duplicates(directory: Path, threshold: int) -> dict[str, list[str
     return duplicates
 
 
-def find_video_duplicates(directory: Path, threshold: int) -> dict[str, list[str]]:
+def find_video_duplicates(
+    directory: Path, threshold: int, ui: UI
+) -> dict[str, list[str]]:
     ffmpeg = _get_ffmpeg()
     video_files = _collect_files(directory, VIDEO_EXTENSIONS)
 
@@ -168,7 +182,7 @@ def find_video_duplicates(directory: Path, threshold: int) -> dict[str, list[str
         try:
             hashes[_relative_key(f, directory)] = _extract_frame_hash(f, ffmpeg)
         except Exception as e:
-            print(f"  Warning: skipping {f.name}: {e}", file=sys.stderr)
+            ui.console.print(f"  Warning: skipping {f.name}: {e}")
 
     duplicates: dict[str, list[str]] = {name: [] for name in hashes}
     names = list(hashes.keys())
@@ -188,30 +202,31 @@ def report_and_delete(
     groups: list[set[str]],
     directory: Path,
     dry: bool,
+    ui: UI,
 ) -> int:
     if not groups:
-        print(f"No duplicate {label} found.")
+        ui.output.print(f"No duplicate {label} found.")
         return 0
 
     to_delete = resolve_deletions(groups, directory)
 
-    print(
+    ui.output.print(
         f"Found {len(groups)} duplicate {label} group(s), {len(to_delete)} file(s) to remove:\n"
     )
     for i, group in enumerate(groups, 1):
         sorted_files = sorted(group)
-        print(f"  Group {i}:")
-        print(f"    keep:   {sorted_files[0]}")
+        ui.output.print(f"  Group {i}:")
+        ui.output.print(f"    keep:   {sorted_files[0]}")
         for f in sorted_files[1:]:
-            print(f"    delete: {f}")
-        print()
+            ui.output.print(f"    delete: {f}")
+        ui.output.print()
 
     if dry:
         return len(to_delete)
 
     for path in to_delete:
         path.unlink()
-        print(f"  Deleted: {path}")
+        ui.console.print(f"  Deleted: {path}")
 
     return len(to_delete)
 
@@ -222,40 +237,41 @@ def run(
     dry: bool,
     only: str | None,
     delete_empty: bool,
+    ui: UI,
 ) -> None:
     if not directory.is_dir():
-        print(f"Error: {directory} is not a directory", file=sys.stderr)
+        ui.console.print(f"Error: {directory} is not a directory")
         sys.exit(1)
 
     total_deleted = 0
 
     if delete_empty:
-        total_deleted += delete_empty_files(directory, dry)
+        total_deleted += delete_empty_files(directory, dry, ui)
 
     if only in (None, "images"):
         image_files = _collect_files(directory, IMAGE_EXTENSIONS)
         if not image_files:
-            print("No images found.")
+            ui.output.print("No images found.")
         else:
-            print(f"Scanning {len(image_files)} image(s)...")
-            duplicates = find_image_duplicates(directory, threshold)
+            ui.console.print(f"Scanning {len(image_files)} image(s)...")
+            duplicates = find_image_duplicates(directory, threshold, ui)
             groups = build_duplicate_groups(duplicates)
-            total_deleted += report_and_delete("image", groups, directory, dry)
+            total_deleted += report_and_delete("image", groups, directory, dry, ui)
 
     if only in (None, "videos"):
         video_files = _collect_files(directory, VIDEO_EXTENSIONS)
         if not video_files:
-            print("No videos found.")
+            ui.output.print("No videos found.")
         else:
-            print(f"Scanning {len(video_files)} video(s)...")
-            duplicates = find_video_duplicates(directory, threshold)
+            ui.console.print(f"Scanning {len(video_files)} video(s)...")
+            duplicates = find_video_duplicates(directory, threshold, ui)
             groups = build_duplicate_groups(duplicates)
-            total_deleted += report_and_delete("video", groups, directory, dry)
+            total_deleted += report_and_delete("video", groups, directory, dry, ui)
 
     if dry:
-        print(f"\n[dry run] {total_deleted} file(s) would be deleted.")
+        ui.output.print(f"\n[dry run] {total_deleted} file(s) would be deleted.")
     elif total_deleted:
-        print(f"\nRemoved {total_deleted} duplicate(s) total.")
+        ui.console.print(f"\nRemoved {total_deleted} duplicate(s) total.")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -295,6 +311,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+    ui = UI()
     try:
         run(
             args.directory,
@@ -302,9 +319,10 @@ def main(argv: list[str] | None = None) -> None:
             args.dry_run,
             args.only,
             args.delete_empty,
+            ui,
         )
     except KeyboardInterrupt:
-        print("\nInterrupted.", file=sys.stderr)
+        ui.console.print("\nInterrupted.")
         sys.exit(130)
 
 
