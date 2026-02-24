@@ -287,3 +287,34 @@ class TestMain:
         result = runner.invoke(main, [str(tmp_path), "--delete-empty"], input="y\n")
         assert result.exit_code == 0
         assert not (tmp_path / "empty.jpg").exists()
+
+    def test_verbose_shows_details(self, tmp_path: Path):
+        _make_image(tmp_path / "a.jpg")
+        _make_image(tmp_path / "b.jpg")
+        same_hash = _make_hash(42)
+        runner = CliRunner()
+        with patch("imgdedup.main.imagehash.phash", return_value=same_hash):
+            result = runner.invoke(
+                main,
+                [str(tmp_path), "--verbose", "--only", "images", "--dry-run"],
+            )
+        assert result.exit_code == 0
+        assert "distance=" in result.output
+        assert "->" in result.output
+
+    def test_exit_code_2_on_nonexistent_dir(self, tmp_path: Path):
+        runner = CliRunner()
+        result = runner.invoke(main, [str(tmp_path / "nope")])
+        assert result.exit_code == 2
+
+    def test_keyboard_interrupt_exit_130(self, tmp_path: Path):
+        d = tmp_path / "d"
+        d.mkdir()
+        _make_image(d / "a.jpg")
+        runner = CliRunner()
+        with patch(
+            "imgdedup.main.find_image_duplicates",
+            side_effect=KeyboardInterrupt,
+        ):
+            result = runner.invoke(main, [str(d), "--only", "images"])
+        assert result.exit_code == 130

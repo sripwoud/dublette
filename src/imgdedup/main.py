@@ -163,7 +163,11 @@ def find_image_duplicates(
         for f in image_files:
             try:
                 img = Image.open(f)
-                hashes[_relative_key(f, directory)] = imagehash.phash(img)
+                h = imagehash.phash(img)
+                key = _relative_key(f, directory)
+                hashes[key] = h
+                if ui.verbose:
+                    ui.console.print(f"  [dim]{key}[/dim] -> {h}")
             except Exception as e:
                 ui.console.print(f"  Warning: skipping {f.name}: {e}")
             progress.advance(task)
@@ -177,6 +181,10 @@ def find_image_duplicates(
         for i in range(len(names)):
             for j in range(i + 1, len(names)):
                 distance = hashes[names[i]] - hashes[names[j]]
+                if ui.verbose:
+                    ui.console.print(
+                        f"  [dim]{names[i]} <-> {names[j]}: distance={distance}[/dim]"
+                    )
                 if distance <= threshold:
                     duplicates[names[i]].append(names[j])
                     duplicates[names[j]].append(names[i])
@@ -196,7 +204,11 @@ def find_video_duplicates(
         task = progress.add_task("Hashing videos", total=len(video_files))
         for f in video_files:
             try:
-                hashes[_relative_key(f, directory)] = _extract_frame_hash(f, ffmpeg)
+                key = _relative_key(f, directory)
+                h = _extract_frame_hash(f, ffmpeg)
+                hashes[key] = h
+                if ui.verbose:
+                    ui.console.print(f"  [dim]{key}[/dim] -> {h}")
             except Exception as e:
                 ui.console.print(f"  Warning: skipping {f.name}: {e}")
             progress.advance(task)
@@ -210,6 +222,10 @@ def find_video_duplicates(
         for i in range(len(names)):
             for j in range(i + 1, len(names)):
                 distance = hashes[names[i]] - hashes[names[j]]
+                if ui.verbose:
+                    ui.console.print(
+                        f"  [dim]{names[i]} <-> {names[j]}: distance={distance}[/dim]"
+                    )
                 if distance <= threshold:
                     duplicates[names[i]].append(names[j])
                     duplicates[names[j]].append(names[i])
