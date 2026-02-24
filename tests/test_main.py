@@ -1,13 +1,16 @@
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import imagehash
 import numpy as np
 import pytest
 
+from PIL import Image as PILImage
+
 from imgdedup.main import (
     build_duplicate_groups,
     delete_empty_files,
+    find_image_duplicates,
     find_video_duplicates,
     main,
     parse_args,
@@ -21,6 +24,10 @@ def _make_hash(value: int) -> imagehash.ImageHash:
         if value & (1 << i):
             bits[i // 8][i % 8] = True
     return imagehash.ImageHash(bits)
+
+
+def _make_image(path: Path) -> None:
+    PILImage.new("RGB", (1, 1), color="red").save(path)
 
 
 class TestBuildDuplicateGroups:
@@ -99,6 +106,53 @@ class TestDeleteEmptyFiles:
         (tmp_path / "a.jpg").write_bytes(b"\xff")
         assert delete_empty_files(tmp_path, dry=False) == 0
 
+    def test_recurses_into_subdirs(self, tmp_path: Path):
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        (sub / "empty.png").touch()
+        (tmp_path / "empty.jpg").touch()
+
+        count = delete_empty_files(tmp_path, dry=True)
+        assert count == 2
+
+
+class TestFindImageDuplicates:
+    def test_pairwise_comparison(self, tmp_path: Path):
+        hash_a = _make_hash(0)
+        hash_b = _make_hash(1)
+        hash_c = _make_hash(0xFFFF)
+
+        _make_image(tmp_path / "a.jpg")
+        _make_image(tmp_path / "b.jpg")
+        _make_image(tmp_path / "c.jpg")
+
+        hash_map = {"a.jpg": hash_a, "b.jpg": hash_b, "c.jpg": hash_c}
+
+        with patch(
+            "imgdedup.main.imagehash.phash",
+            side_effect=lambda img: hash_map[Path(img.filename).name],
+        ):
+            result = find_image_duplicates(tmp_path, threshold=9)
+
+        assert "b.jpg" in result["a.jpg"]
+        assert "a.jpg" in result["b.jpg"]
+        assert result["c.jpg"] == []
+
+    def test_cross_folder_duplicates(self, tmp_path: Path):
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        _make_image(tmp_path / "a.jpg")
+        _make_image(sub / "b.jpg")
+
+        same_hash = _make_hash(42)
+
+        with patch("imgdedup.main.imagehash.phash", return_value=same_hash):
+            result = find_image_duplicates(tmp_path, threshold=9)
+
+        keys = list(result.keys())
+        assert len(keys) == 2
+        assert any("sub" in k for k in keys)
+
 
 class TestFindVideoDuplicates:
     def test_pairwise_comparison(self, tmp_path: Path):
@@ -118,7 +172,7 @@ class TestFindVideoDuplicates:
             patch("imgdedup.main._extract_frame_hash", side_effect=mock_extract),
             patch("imgdedup.main._get_ffmpeg", return_value="/usr/bin/ffmpeg"),
         ):
-            result = find_video_duplicates(tmp_path, threshold=10)
+            result = find_video_duplicates(tmp_path, threshold=9)
 
         assert "b.mp4" in result["a.mp4"]
         assert "a.mp4" in result["b.mp4"]
@@ -136,7 +190,7 @@ class TestFindVideoDuplicates:
             ),
             patch("imgdedup.main._get_ffmpeg", return_value="/usr/bin/ffmpeg"),
         ):
-            result = find_video_duplicates(tmp_path, threshold=10)
+            result = find_video_duplicates(tmp_path, threshold=9)
 
         assert result == {}
         assert "skipping bad.mov" in capsys.readouterr().err
@@ -146,8 +200,7 @@ class TestParseArgs:
     def test_defaults(self):
         args = parse_args(["/some/dir"])
         assert args.directory == Path("/some/dir")
-        assert args.method == "phash"
-        assert args.threshold == 10
+        assert args.threshold == 9
         assert args.dry_run is False
         assert args.only is None
         assert args.delete_empty is False
@@ -156,8 +209,6 @@ class TestParseArgs:
         args = parse_args(
             [
                 "/img",
-                "-m",
-                "ahash",
                 "-t",
                 "5",
                 "-n",
@@ -166,7 +217,6 @@ class TestParseArgs:
                 "--delete-empty",
             ]
         )
-        assert args.method == "ahash"
         assert args.threshold == 5
         assert args.dry_run is True
         assert args.only == "videos"
@@ -190,46 +240,6 @@ class TestMain:
         assert "No images found" in out
         assert "No videos found" in out
 
-    def _make_mock_hasher(self, fake_duplicates: dict[str, list[str]]):
-        mock_cls = MagicMock()
-        mock_cls.return_value.find_duplicates.return_value = fake_duplicates
-        return mock_cls
-
-    def test_dry_run_images(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
-        d = tmp_path / "imgs"
-        d.mkdir()
-        (d / "a.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
-        (d / "b.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
-
-        fake_duplicates = {"a.jpg": ["b.jpg"], "b.jpg": ["a.jpg"]}
-        mock_hasher = self._make_mock_hasher(fake_duplicates)
-
-        with patch.dict("imgdedup.main.HASHERS", {"phash": mock_hasher}):
-            main([str(d), "-n", "--only", "images"])
-
-        assert (d / "a.jpg").exists()
-        assert (d / "b.jpg").exists()
-        output = capsys.readouterr().out
-        assert "dry run" in output
-
-    def test_actual_deletion_images(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ):
-        d = tmp_path / "imgs"
-        d.mkdir()
-        (d / "a.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
-        (d / "b.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
-
-        fake_duplicates = {"a.jpg": ["b.jpg"], "b.jpg": ["a.jpg"]}
-        mock_hasher = self._make_mock_hasher(fake_duplicates)
-
-        with patch.dict("imgdedup.main.HASHERS", {"phash": mock_hasher}):
-            main([str(d), "--only", "images"])
-
-        assert (d / "a.jpg").exists()
-        assert not (d / "b.jpg").exists()
-        assert "Removed 1" in capsys.readouterr().out
-
     def test_only_videos_skips_images(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ):
@@ -246,7 +256,7 @@ class TestMain:
     ):
         d = tmp_path / "mixed"
         d.mkdir()
-        (d / "a.mp4").touch()
+        (d / "a.mp4").write_bytes(b"\x00" * 10)
         main([str(d), "--only", "images"])
         out = capsys.readouterr().out
         assert "No images found" in out
