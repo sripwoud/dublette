@@ -119,7 +119,7 @@ def resolve_deletions(groups: list[set[str]], directory: Path) -> list[Path]:
     return to_delete
 
 
-def delete_empty_files(directory: Path, dry: bool, ui: UI) -> int:
+def delete_empty_files(directory: Path, dry: bool, yes: bool, ui: UI) -> int:
     pattern = directory.rglob("*")
     empty = sorted(
         f
@@ -141,6 +141,9 @@ def delete_empty_files(directory: Path, dry: bool, ui: UI) -> int:
 
     if dry:
         return len(empty)
+
+    if not yes:
+        click.confirm(f"Delete {len(empty)} empty file(s)?", abort=True)
 
     for f in empty:
         f.unlink()
@@ -220,6 +223,7 @@ def report_and_delete(
     groups: list[set[str]],
     directory: Path,
     dry: bool,
+    yes: bool,
     ui: UI,
 ) -> int:
     if not groups:
@@ -245,6 +249,9 @@ def report_and_delete(
     if dry:
         return len(to_delete)
 
+    if not yes:
+        click.confirm(f"Delete {len(to_delete)} {label} file(s)?", abort=True)
+
     for path in to_delete:
         path.unlink()
         ui.console.print(f"  [red]Deleted:[/red] {path.relative_to(directory)}")
@@ -258,12 +265,13 @@ def run(
     dry: bool,
     only: str | None,
     delete_empty: bool,
+    yes: bool,
     ui: UI,
 ) -> None:
     total_deleted = 0
 
     if delete_empty:
-        total_deleted += delete_empty_files(directory, dry, ui)
+        total_deleted += delete_empty_files(directory, dry, yes, ui)
 
     if only in (None, "images"):
         image_files = _collect_files(directory, IMAGE_EXTENSIONS)
@@ -273,7 +281,7 @@ def run(
             ui.console.print(f"Scanning {len(image_files)} image(s)...")
             duplicates = find_image_duplicates(directory, threshold, ui)
             groups = build_duplicate_groups(duplicates)
-            total_deleted += report_and_delete("image", groups, directory, dry, ui)
+            total_deleted += report_and_delete("image", groups, directory, dry, yes, ui)
 
     if only in (None, "videos"):
         video_files = _collect_files(directory, VIDEO_EXTENSIONS)
@@ -283,7 +291,7 @@ def run(
             ui.console.print(f"Scanning {len(video_files)} video(s)...")
             duplicates = find_video_duplicates(directory, threshold, ui)
             groups = build_duplicate_groups(duplicates)
-            total_deleted += report_and_delete("video", groups, directory, dry, ui)
+            total_deleted += report_and_delete("video", groups, directory, dry, yes, ui)
 
     if dry:
         ui.output.print(f"\n\\[dry run] {total_deleted} file(s) would be deleted.")
@@ -334,7 +342,7 @@ def main(
         verbose=verbose,
     )
     try:
-        run(directory, threshold, dry_run, only, delete_empty, ui)
+        run(directory, threshold, dry_run, only, delete_empty, yes, ui)
     except KeyboardInterrupt:
         ui.console.print("\nInterrupted.")
         sys.exit(130)

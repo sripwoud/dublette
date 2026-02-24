@@ -98,7 +98,7 @@ class TestDeleteEmptyFiles:
         (tmp_path / "empty.txt").touch()
 
         ui, _stderr_buf, stdout_buf = _make_ui()
-        count = delete_empty_files(tmp_path, dry=True, ui=ui)
+        count = delete_empty_files(tmp_path, dry=True, yes=True, ui=ui)
         assert count == 2
         assert (tmp_path / "empty.jpg").exists()
         output = stdout_buf.getvalue()
@@ -110,7 +110,7 @@ class TestDeleteEmptyFiles:
         (tmp_path / "good.mp4").write_bytes(b"\x00" * 10)
 
         ui, _stderr_buf, _stdout_buf = _make_ui()
-        count = delete_empty_files(tmp_path, dry=False, ui=ui)
+        count = delete_empty_files(tmp_path, dry=False, yes=True, ui=ui)
         assert count == 1
         assert not (tmp_path / "empty.mp4").exists()
         assert (tmp_path / "good.mp4").exists()
@@ -118,7 +118,7 @@ class TestDeleteEmptyFiles:
     def test_no_empty_files(self, tmp_path: Path):
         (tmp_path / "a.jpg").write_bytes(b"\xff")
         ui, _stderr_buf, _stdout_buf = _make_ui()
-        assert delete_empty_files(tmp_path, dry=False, ui=ui) == 0
+        assert delete_empty_files(tmp_path, dry=False, yes=True, ui=ui) == 0
 
     def test_recurses_into_subdirs(self, tmp_path: Path):
         sub = tmp_path / "sub"
@@ -127,7 +127,7 @@ class TestDeleteEmptyFiles:
         (tmp_path / "empty.jpg").touch()
 
         ui, _stderr_buf, _stdout_buf = _make_ui()
-        count = delete_empty_files(tmp_path, dry=True, ui=ui)
+        count = delete_empty_files(tmp_path, dry=True, yes=True, ui=ui)
         assert count == 2
 
 
@@ -260,7 +260,30 @@ class TestMain:
         _make_image(tmp_path / "a.jpg")
         _make_image(tmp_path / "b.jpg")
         runner = CliRunner()
-        result = runner.invoke(main, [str(tmp_path), "--quiet", "--only", "images"])
+        result = runner.invoke(
+            main, [str(tmp_path), "--quiet", "--only", "images", "--dry-run"]
+        )
         assert result.exit_code == 0
         assert "Hashing" not in result.output
         assert "Comparing" not in result.output
+
+    def test_yes_flag_skips_confirmation(self, tmp_path: Path):
+        (tmp_path / "empty.jpg").touch()
+        runner = CliRunner()
+        result = runner.invoke(main, [str(tmp_path), "--delete-empty", "--yes"])
+        assert result.exit_code == 0
+        assert not (tmp_path / "empty.jpg").exists()
+
+    def test_confirmation_prompt_abort(self, tmp_path: Path):
+        (tmp_path / "empty.jpg").touch()
+        runner = CliRunner()
+        result = runner.invoke(main, [str(tmp_path), "--delete-empty"], input="n\n")
+        assert result.exit_code == 1
+        assert (tmp_path / "empty.jpg").exists()
+
+    def test_confirmation_prompt_proceed(self, tmp_path: Path):
+        (tmp_path / "empty.jpg").touch()
+        runner = CliRunner()
+        result = runner.invoke(main, [str(tmp_path), "--delete-empty"], input="y\n")
+        assert result.exit_code == 0
+        assert not (tmp_path / "empty.jpg").exists()
