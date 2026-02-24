@@ -1,4 +1,3 @@
-import argparse
 import shutil
 import subprocess
 import sys
@@ -7,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import click
 import imagehash
 from PIL import Image
 from rich.console import Console
@@ -239,10 +239,6 @@ def run(
     delete_empty: bool,
     ui: UI,
 ) -> None:
-    if not directory.is_dir():
-        ui.console.print(f"Error: {directory} is not a directory")
-        sys.exit(1)
-
     total_deleted = 0
 
     if delete_empty:
@@ -269,58 +265,55 @@ def run(
             total_deleted += report_and_delete("video", groups, directory, dry, ui)
 
     if dry:
-        ui.output.print(f"\n[dry run] {total_deleted} file(s) would be deleted.")
+        ui.output.print(f"\n\\[dry run] {total_deleted} file(s) would be deleted.")
     elif total_deleted:
         ui.console.print(f"\nRemoved {total_deleted} duplicate(s) total.")
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="imgdedup",
-        description="Deduplicate images and videos using perceptual hashing.",
+@click.command()
+@click.argument(
+    "directory", type=click.Path(exists=True, file_okay=False, path_type=Path)
+)
+@click.option(
+    "-t",
+    "--threshold",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Max hamming distance to consider as duplicate.",
+)
+@click.option("-n", "--dry-run", is_flag=True, help="List duplicates without deleting.")
+@click.option(
+    "--only",
+    type=click.Choice(["images", "videos"]),
+    default=None,
+    help="Process only images or only videos.",
+)
+@click.option("--delete-empty", is_flag=True, help="Delete 0-byte media files.")
+@click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt.")
+@click.option("-q", "--quiet", is_flag=True, help="Suppress progress output.")
+@click.option("-v", "--verbose", is_flag=True, help="Show verbose output.")
+@click.option("--no-color", is_flag=True, help="Disable color output.")
+def main(
+    directory: Path,
+    threshold: int,
+    dry_run: bool,
+    only: str | None,
+    delete_empty: bool,
+    yes: bool,
+    quiet: bool,
+    verbose: bool,
+    no_color: bool,
+) -> None:
+    """Deduplicate images and videos using perceptual hashing."""
+    ui = UI(
+        console=Console(stderr=True, no_color=no_color),
+        output=Console(no_color=no_color),
+        quiet=quiet,
+        verbose=verbose,
     )
-    parser.add_argument(
-        "directory", type=Path, help="Folder containing media to deduplicate"
-    )
-    parser.add_argument(
-        "-t",
-        "--threshold",
-        type=int,
-        default=1,
-        help="Max hamming distance to consider as duplicate (default: 1)",
-    )
-    parser.add_argument(
-        "-n",
-        "--dry-run",
-        action="store_true",
-        help="List duplicates without deleting",
-    )
-    parser.add_argument(
-        "--only",
-        choices=("images", "videos"),
-        default=None,
-        help="Process only images or only videos (omit to process all)",
-    )
-    parser.add_argument(
-        "--delete-empty",
-        action="store_true",
-        help="Delete 0-byte media files",
-    )
-    return parser.parse_args(argv)
-
-
-def main(argv: list[str] | None = None) -> None:
-    args = parse_args(argv)
-    ui = UI()
     try:
-        run(
-            args.directory,
-            args.threshold,
-            args.dry_run,
-            args.only,
-            args.delete_empty,
-            ui,
-        )
+        run(directory, threshold, dry_run, only, delete_empty, ui)
     except KeyboardInterrupt:
         ui.console.print("\nInterrupted.")
         sys.exit(130)

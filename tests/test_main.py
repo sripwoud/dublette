@@ -4,8 +4,7 @@ from unittest.mock import patch
 
 import imagehash
 import numpy as np
-import pytest
-
+from click.testing import CliRunner
 from PIL import Image as PILImage
 from rich.console import Console
 
@@ -16,7 +15,6 @@ from imgdedup.main import (
     find_image_duplicates,
     find_video_duplicates,
     main,
-    parse_args,
     resolve_deletions,
 )
 
@@ -213,68 +211,37 @@ class TestFindVideoDuplicates:
         assert "skipping bad.mov" in stderr_buf.getvalue()
 
 
-class TestParseArgs:
-    def test_defaults(self):
-        args = parse_args(["/some/dir"])
-        assert args.directory == Path("/some/dir")
-        assert args.threshold == 1
-        assert args.dry_run is False
-        assert args.only is None
-        assert args.delete_empty is False
-
-    def test_all_flags(self):
-        args = parse_args(
-            [
-                "/img",
-                "-t",
-                "5",
-                "-n",
-                "--only",
-                "videos",
-                "--delete-empty",
-            ]
-        )
-        assert args.threshold == 5
-        assert args.dry_run is True
-        assert args.only == "videos"
-        assert args.delete_empty is True
-
-    def test_only_images(self):
-        args = parse_args(["/img", "--only", "images"])
-        assert args.only == "images"
-
-
 class TestMain:
     def test_nonexistent_directory(self, tmp_path: Path):
-        with pytest.raises(SystemExit):
-            main([str(tmp_path / "nonexistent")])
+        runner = CliRunner()
+        result = runner.invoke(main, [str(tmp_path / "nonexistent")])
+        assert result.exit_code == 2
 
-    def test_empty_directory(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    def test_empty_directory(self, tmp_path: Path):
         d = tmp_path / "empty"
         d.mkdir()
-        main([str(d)])
-        out = capsys.readouterr().out
-        assert "No images found" in out
-        assert "No videos found" in out
+        runner = CliRunner()
+        result = runner.invoke(main, [str(d)])
+        assert result.exit_code == 0
+        assert "No images found" in result.output
+        assert "No videos found" in result.output
 
-    def test_only_videos_skips_images(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ):
+    def test_only_videos_skips_images(self, tmp_path: Path):
         d = tmp_path / "mixed"
         d.mkdir()
         (d / "a.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
-        main([str(d), "--only", "videos"])
-        out = capsys.readouterr().out
-        assert "No videos found" in out
-        assert "image" not in out.lower()
+        runner = CliRunner()
+        result = runner.invoke(main, [str(d), "--only", "videos"])
+        assert result.exit_code == 0
+        assert "No videos found" in result.output
+        assert "image" not in result.output.lower()
 
-    def test_only_images_skips_videos(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ):
+    def test_only_images_skips_videos(self, tmp_path: Path):
         d = tmp_path / "mixed"
         d.mkdir()
         (d / "a.mp4").write_bytes(b"\x00" * 10)
-        main([str(d), "--only", "images"])
-        out = capsys.readouterr().out
-        assert "No images found" in out
-        assert "video" not in out.lower()
+        runner = CliRunner()
+        result = runner.invoke(main, [str(d), "--only", "images"])
+        assert result.exit_code == 0
+        assert "No images found" in result.output
+        assert "video" not in result.output.lower()
