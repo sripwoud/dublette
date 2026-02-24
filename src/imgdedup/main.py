@@ -11,6 +11,7 @@ import imagehash
 from PIL import Image
 from rich.console import Console
 from rich.progress import Progress
+from rich.table import Table
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".webp"}
 VIDEO_EXTENSIONS = {
@@ -130,18 +131,20 @@ def delete_empty_files(directory: Path, dry: bool, ui: UI) -> int:
     if not empty:
         return 0
 
-    ui.output.print(f"Found {len(empty)} empty (0-byte) file(s):\n")
+    table = Table(title=f"Empty (0-byte) files ({len(empty)})")
+    table.add_column("File", style="red")
+    table.add_column("Action", style="dim" if dry else "red")
     for f in empty:
-        ui.output.print(f"    {f.relative_to(directory)}")
+        action = "would delete" if dry else "delete"
+        table.add_row(str(f.relative_to(directory)), action)
+    ui.output.print(table)
 
     if dry:
-        ui.output.print()
         return len(empty)
 
-    ui.output.print()
     for f in empty:
         f.unlink()
-        ui.console.print(f"  Deleted: {f}")
+        ui.console.print(f"  [red]Deleted:[/red] {f.relative_to(directory)}")
 
     return len(empty)
 
@@ -225,23 +228,26 @@ def report_and_delete(
 
     to_delete = resolve_deletions(groups, directory)
 
-    ui.output.print(
-        f"Found {len(groups)} duplicate {label} group(s), {len(to_delete)} file(s) to remove:\n"
+    table = Table(
+        title=f"Duplicate {label}s: {len(groups)} group(s), {len(to_delete)} to remove"
     )
+    table.add_column("Group", style="bold")
+    table.add_column("File")
+    table.add_column("Action")
     for i, group in enumerate(groups, 1):
         sorted_files = sorted(group)
-        ui.output.print(f"  Group {i}:")
-        ui.output.print(f"    keep:   {sorted_files[0]}")
+        table.add_row(str(i), sorted_files[0], "[green]keep[/green]")
         for f in sorted_files[1:]:
-            ui.output.print(f"    delete: {f}")
-        ui.output.print()
+            action = "[dim]would delete[/dim]" if dry else "[red]delete[/red]"
+            table.add_row("", f, action)
+    ui.output.print(table)
 
     if dry:
         return len(to_delete)
 
     for path in to_delete:
         path.unlink()
-        ui.console.print(f"  Deleted: {path}")
+        ui.console.print(f"  [red]Deleted:[/red] {path.relative_to(directory)}")
 
     return len(to_delete)
 

@@ -101,7 +101,9 @@ class TestDeleteEmptyFiles:
         count = delete_empty_files(tmp_path, dry=True, ui=ui)
         assert count == 2
         assert (tmp_path / "empty.jpg").exists()
-        assert "empty.jpg" in stdout_buf.getvalue()
+        output = stdout_buf.getvalue()
+        assert "empty.jpg" in output
+        assert "would delete" in output
 
     def test_deletes_empty_files(self, tmp_path: Path):
         (tmp_path / "empty.mp4").touch()
@@ -245,6 +247,14 @@ class TestMain:
         assert result.exit_code == 0
         assert "No images found" in result.output
         assert "video" not in result.output.lower()
+
+    def test_no_color_flag(self, tmp_path: Path):
+        d = tmp_path / "nc"
+        d.mkdir()
+        runner = CliRunner()
+        result = runner.invoke(main, [str(d), "--no-color"])
+        assert result.exit_code == 0
+        assert "\x1b[" not in result.output
 
     def test_quiet_suppresses_progress(self, tmp_path: Path):
         _make_image(tmp_path / "a.jpg")
