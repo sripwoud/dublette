@@ -200,7 +200,7 @@ class TestParseArgs:
     def test_defaults(self):
         args = parse_args(["/some/dir"])
         assert args.directory == Path("/some/dir")
-        assert args.threshold == 9
+        assert args.threshold == 1
         assert args.dry_run is False
         assert args.only is None
         assert args.delete_empty is False

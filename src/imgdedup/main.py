@@ -270,8 +270,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-t",
         "--threshold",
         type=int,
-        default=9,
-        help="Max hamming distance to consider as duplicate (default: 9)",
+        default=1,
+        help="Max hamming distance to consider as duplicate (default: 1)",
     )
     parser.add_argument(
         "-n",
