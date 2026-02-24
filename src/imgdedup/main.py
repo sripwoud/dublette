@@ -10,6 +10,7 @@ import click
 import imagehash
 from PIL import Image
 from rich.console import Console
+from rich.progress import Progress
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".webp"}
 VIDEO_EXTENSIONS = {
@@ -151,22 +152,29 @@ def find_image_duplicates(
     image_files = _collect_files(directory, IMAGE_EXTENSIONS)
 
     hashes: dict[str, imagehash.ImageHash] = {}
-    for f in image_files:
-        try:
-            img = Image.open(f)
-            hashes[_relative_key(f, directory)] = imagehash.phash(img)
-        except Exception as e:
-            ui.console.print(f"  Warning: skipping {f.name}: {e}")
+    with Progress(console=ui.console, disable=ui.quiet, transient=True) as progress:
+        task = progress.add_task("Hashing images", total=len(image_files))
+        for f in image_files:
+            try:
+                img = Image.open(f)
+                hashes[_relative_key(f, directory)] = imagehash.phash(img)
+            except Exception as e:
+                ui.console.print(f"  Warning: skipping {f.name}: {e}")
+            progress.advance(task)
 
     duplicates: dict[str, list[str]] = {name: [] for name in hashes}
     names = list(hashes.keys())
+    total_pairs = len(names) * (len(names) - 1) // 2
 
-    for i in range(len(names)):
-        for j in range(i + 1, len(names)):
-            distance = hashes[names[i]] - hashes[names[j]]
-            if distance <= threshold:
-                duplicates[names[i]].append(names[j])
-                duplicates[names[j]].append(names[i])
+    with Progress(console=ui.console, disable=ui.quiet, transient=True) as progress:
+        task = progress.add_task("Comparing images", total=total_pairs)
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                distance = hashes[names[i]] - hashes[names[j]]
+                if distance <= threshold:
+                    duplicates[names[i]].append(names[j])
+                    duplicates[names[j]].append(names[i])
+                progress.advance(task)
 
     return duplicates
 
@@ -178,21 +186,28 @@ def find_video_duplicates(
     video_files = _collect_files(directory, VIDEO_EXTENSIONS)
 
     hashes: dict[str, imagehash.ImageHash] = {}
-    for f in video_files:
-        try:
-            hashes[_relative_key(f, directory)] = _extract_frame_hash(f, ffmpeg)
-        except Exception as e:
-            ui.console.print(f"  Warning: skipping {f.name}: {e}")
+    with Progress(console=ui.console, disable=ui.quiet, transient=True) as progress:
+        task = progress.add_task("Hashing videos", total=len(video_files))
+        for f in video_files:
+            try:
+                hashes[_relative_key(f, directory)] = _extract_frame_hash(f, ffmpeg)
+            except Exception as e:
+                ui.console.print(f"  Warning: skipping {f.name}: {e}")
+            progress.advance(task)
 
     duplicates: dict[str, list[str]] = {name: [] for name in hashes}
     names = list(hashes.keys())
+    total_pairs = len(names) * (len(names) - 1) // 2
 
-    for i in range(len(names)):
-        for j in range(i + 1, len(names)):
-            distance = hashes[names[i]] - hashes[names[j]]
-            if distance <= threshold:
-                duplicates[names[i]].append(names[j])
-                duplicates[names[j]].append(names[i])
+    with Progress(console=ui.console, disable=ui.quiet, transient=True) as progress:
+        task = progress.add_task("Comparing videos", total=total_pairs)
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                distance = hashes[names[i]] - hashes[names[j]]
+                if distance <= threshold:
+                    duplicates[names[i]].append(names[j])
+                    duplicates[names[j]].append(names[i])
+                progress.advance(task)
 
     return duplicates
 

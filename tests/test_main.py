@@ -245,3 +245,12 @@ class TestMain:
         assert result.exit_code == 0
         assert "No images found" in result.output
         assert "video" not in result.output.lower()
+
+    def test_quiet_suppresses_progress(self, tmp_path: Path):
+        _make_image(tmp_path / "a.jpg")
+        _make_image(tmp_path / "b.jpg")
+        runner = CliRunner()
+        result = runner.invoke(main, [str(tmp_path), "--quiet", "--only", "images"])
+        assert result.exit_code == 0
+        assert "Hashing" not in result.output
+        assert "Comparing" not in result.output
