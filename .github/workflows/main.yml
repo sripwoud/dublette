@@ -12,28 +12,27 @@ jobs:
   changed-files:
     runs-on: ubuntu-latest
     outputs:
-      any_py_changed: ${{ steps.changed-files.outputs.any_changed }}
+      any_rs_changed: ${{ steps.changed-files.outputs.any_changed }}
     steps:
       - uses: actions/checkout@v4
       - uses: tj-actions/changed-files@v46
         id: changed-files
         with:
           files: |
-            {src,tests}/**/*.py
-            .python-version
-            pyproject.toml
-            uv.lock
+            {src,tests}/**/*.rs
+            Cargo.toml
+            Cargo.lock
 
   _test:
     needs: changed-files
-    if: needs.changed-files.outputs.any_py_changed == 'true'
+    if: needs.changed-files.outputs.any_rs_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-      - run: uv run --frozen pytest
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get install -y ffmpeg
+      - run: cargo test
 
   test:
     needs: _test
@@ -47,14 +46,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
       - uses: jdx/mise-action@v2
         with:
           mise_toml: |
             [tasks]
             "check-format" = { run = "dprint check --excludes mise.toml" }
-            "check-lint" = { run = "ruff check" }
+            "check-rustfmt" = { run = "cargo fmt -- --check" }
+            "check-clippy" = { run = "cargo clippy -- -D warnings" }
             "check" = { depends = "check-*" }
             [tools]
             dprint = "latest"
-            ruff = "latest"
       - run: mise r check
