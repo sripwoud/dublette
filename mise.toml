@@ -1,6 +1,6 @@
 [tasks.run]
 alias = "r"
-description = "Run imgdedup"
+description = "Run dublette"
 run = "cargo run --"
 
 [tasks.test]

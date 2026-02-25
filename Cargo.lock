@@ -383,6 +383,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "dublette"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "color-eyre",
+ "ctrlc",
+ "dialoguer",
+ "eyre",
+ "image",
+ "img_hash",
+ "indicatif",
+ "predicates",
+ "rayon",
+ "serde",
+ "serde_json",
+ "tabled",
+ "tempfile",
+ "walkdir",
+ "which",
+]
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -545,29 +568,6 @@ dependencies = [
  "rustdct",
  "serde",
  "transpose 0.2.3",
-]
-
-[[package]]
-name = "imgdedup"
-version = "0.1.0"
-dependencies = [
- "assert_cmd",
- "clap",
- "color-eyre",
- "ctrlc",
- "dialoguer",
- "eyre",
- "image",
- "img_hash",
- "indicatif",
- "predicates",
- "rayon",
- "serde",
- "serde_json",
- "tabled",
- "tempfile",
- "walkdir",
- "which",
 ]
 
 [[package]]

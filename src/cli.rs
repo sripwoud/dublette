@@ -10,7 +10,7 @@ pub enum MediaFilter {
 
 #[derive(Parser)]
 #[command(
-    name = "imgdedup",
+    name = "dublette",
     about = "Deduplicate images and videos using perceptual hashing"
 )]
 pub struct Args {
@@ -60,7 +60,7 @@ mod tests {
 
     #[test]
     fn defaults() {
-        let args = parse(&["imgdedup", "/tmp"]);
+        let args = parse(&["dublette", "/tmp"]);
         assert_eq!(args.threshold, 1);
         assert!(!args.dry_run);
         assert!(!args.delete_empty);
@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn all_flags() {
         let args = parse(&[
-            "imgdedup",
+            "dublette",
             "/tmp",
             "-n",
             "--delete-empty",
@@ -102,13 +102,13 @@ mod tests {
 
     #[test]
     fn only_videos() {
-        let args = parse(&["imgdedup", "/tmp", "--only", "videos"]);
+        let args = parse(&["dublette", "/tmp", "--only", "videos"]);
         assert!(matches!(args.only, Some(MediaFilter::Videos)));
     }
 
     #[test]
     fn missing_directory_fails() {
-        let result = Args::try_parse_from(&["imgdedup"]);
+        let result = Args::try_parse_from(&["dublette"]);
         assert!(result.is_err());
     }
 }

@@ -10,7 +10,7 @@ main() {
   curl -s https://raw.githubusercontent.com/sripwoud/agnostic-template/refs/heads/main/setup | sh
 
   cargo build
-  log "Built imgdedup"
+  log "Built dublette"
 }
 
 main

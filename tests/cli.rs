@@ -6,7 +6,7 @@ use predicates::prelude::*;
 
 #[allow(deprecated)]
 fn cmd() -> Command {
-    Command::cargo_bin("imgdedup").unwrap()
+    Command::cargo_bin("dublette").unwrap()
 }
 
 fn create_gradient_image(path: &std::path::Path, horizontal: bool) {

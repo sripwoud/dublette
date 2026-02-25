@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::Parser;
 
-use imgdedup::cli::Args;
+use dublette::cli::Args;
 
 static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
@@ -33,7 +33,7 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
 
-    match imgdedup::run(&args) {
+    match dublette::run(&args) {
         Ok(found_duplicates) => {
             if args.dry_run && found_duplicates {
                 ExitCode::from(1)

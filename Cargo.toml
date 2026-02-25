@@ -1,5 +1,5 @@
 [package]
-name = "imgdedup"
+name = "dublette"
 version = "0.1.0"
 edition = "2024"
 description = "Deduplicate images and videos using perceptual hashing"
