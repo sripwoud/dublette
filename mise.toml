@@ -10,7 +10,7 @@ run = "cargo test"
 
 [tools]
 "cargo:convco" = "latest"
-dprint = "latest"
+"aqua:dprint/dprint" = "latest"
 hk = "latest"
 pkl = "latest"
 rust = "latest"
