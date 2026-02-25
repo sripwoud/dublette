@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -52,37 +51,6 @@ pub fn find_empty_files(directory: &Path) -> eyre::Result<Vec<PathBuf>> {
         };
 
         if !media_exts.contains(ext.as_str()) {
-            continue;
-        }
-
-        if entry.metadata()?.len() == 0 {
-            empty.push(path.to_path_buf());
-        }
-    }
-
-    empty.sort();
-    Ok(empty)
-}
-
-pub fn collect_zero_byte_files(
-    directory: &Path,
-    extensions: &HashSet<&str>,
-) -> eyre::Result<Vec<PathBuf>> {
-    let mut empty: Vec<PathBuf> = Vec::new();
-
-    for entry in WalkDir::new(directory) {
-        let entry = entry?;
-        if !entry.file_type().is_file() {
-            continue;
-        }
-
-        let path = entry.path();
-        let ext = match path.extension().and_then(|e| e.to_str()) {
-            Some(e) => e.to_lowercase(),
-            None => continue,
-        };
-
-        if !extensions.contains(ext.as_str()) {
             continue;
         }
 

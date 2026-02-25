@@ -7,10 +7,6 @@ use imgdedup::cli::Args;
 
 static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
-pub fn is_interrupted() -> bool {
-    INTERRUPTED.load(Ordering::Relaxed)
-}
-
 fn main() -> ExitCode {
     color_eyre::install().ok();
 
