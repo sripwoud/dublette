@@ -1,16 +1,27 @@
-[tasks.run]
-alias = "r"
+[tasks.build]
+alias = "b"
+run = "cargo run --release"
+silent = true
+
+[tasks.dublette]
+alias = "d"
+depends = "build"
 description = "Run dublette"
-run = "cargo run --"
+raw = true
+run = "{{ vars.dublette }}"
+silent = true
 
 [tasks.test]
 alias = "t"
-description = "Run tests"
-run = "cargo test"
+run = "cargo nextest run"
 
 [tools]
+"cargo:cargo-nextest" = "latest"
 "cargo:convco" = "latest"
 "aqua:dprint/dprint" = "latest"
 hk = "latest"
 pkl = "latest"
 rust = "latest"
+
+[vars]
+dublette = "target/release/dublette"

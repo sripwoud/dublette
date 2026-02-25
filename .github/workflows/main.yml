@@ -32,7 +32,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get install -y ffmpeg
-      - run: cargo test
+      - uses: taiki-e/install-action@nextest
+      - run: cargo nextest run
 
   test:
     needs: _test
