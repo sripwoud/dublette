@@ -9,8 +9,8 @@ log() {
 main() {
   curl -s https://raw.githubusercontent.com/sripwoud/agnostic-template/refs/heads/main/setup | sh
 
-  uv sync
-  log "Installed python deps"
+  cargo build
+  log "Built dublette"
 }
 
 main

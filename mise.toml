@@ -1,17 +1,16 @@
 [tasks.run]
 alias = "r"
-description = "Run main.py"
-run = "python src/my_pkg/main.py"
+description = "Run dublette"
+run = "cargo run --"
 
 [tasks.test]
 alias = "t"
 description = "Run tests"
-run = "uv run pytest"
+run = "cargo test"
 
 [tools]
 "cargo:convco" = "latest"
 dprint = "latest"
 hk = "latest"
 pkl = "latest"
-ruff = "latest"
-uv = "latest"
+rust = "latest"

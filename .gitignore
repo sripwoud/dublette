@@ -1,4 +1,3 @@
 .claude
-__pycache__
-.*_cache
-.venv
+CLAUDE.md
+target
