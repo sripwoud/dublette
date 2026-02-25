@@ -1,27 +1,60 @@
-| <img alt='ts icon' width='50' src='https://raw.githubusercontent.com/devicons/devicon/master/icons/python/python-original.svg'/> | TEMPLATE |
-| -------------------------------------------------------------------------------------------------------------------------------- | -------- |
+<p align="center">
+  <h1 align="center"><a href="https://Dublette.sripwoud.xyz">Auberge</a></h1>
+</p>
+<p align="center">
+  <a href="https://crates.io/crates/dublette">
+    <img src="https://img.shields.io/crates/v/dublette" alt="Crates.io">
+  </a>
+</p>
 
-| Feature                                                                                                               | With                                                                                         | Configuration File                                     |
-| --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| Continuous Integration                                                                                                | [GitHub Workflow](https://docs.github.com/en/actions/using-workflows)                        | [.github/workflows](./.github/workflows)               |
-| Conventional Commits (`main` branch only)                                                                             | [convco](https://github.com/convco/convco)                                                   | [.convco](./.convco)                                   |
-| Conventional PR Titles (because I only squash merge and base changelogs/semantic versioning on `main` commit history) | [amann/action-semantic-pull-request](https://github.com/amannn/action-semantic-pull-request) | [semantic-pr.yml](./.github/workflows/semantic-pr.yml) |
-| Formatting                                                                                                            | [dprint](https://dprint.dev/)                                                                | [.dprint.jsonc](./.biome.json)                         |
-| Git Hooks                                                                                                             | [hk](https://hk.jdx.dev/)                                                                    | [hk.pkl](./hk.pkl)                                     |
-| Package and Project Manager                                                                                           | [uv](docs.astral.sh/uv)                                                                      | [pyproject.toml](./pyproject.toml)                     |
-| Tasks Runner, Environment & Runtime Management                                                                        | [mise](https://mise.dev/)                                                                    | [mise.toml](./mise.toml)                               |
+> Deduplicate images and videos using perceptual hashing
 
-## Develop
+Dublette scans a directory for visually similar media files and removes the duplicates. Unlike byte-level comparison, it uses perceptual hashing to detect files that look the same even if they differ in format, compression, or metadata.
 
-I use [`mise`](https://mise.jdx.dev) to manage runtimes, manage environment variables, and run tasks.\
-To install it and setup the repository:
+## Features
 
-```commandline
-./setup
+- **Perceptual hashing** -- detects visually similar images and videos, not just byte-identical copies
+- **Image and video support** -- handles jpg, png, gif, webp, bmp, tiff, and 9 video formats via ffmpeg
+- **Dry-run mode** -- preview what would be deleted before committing
+- **JSON output** -- machine-readable output for scripting and CI pipelines
+- **Parallel processing** -- hashes files concurrently using all available cores
+- **Configurable threshold** -- tune sensitivity with hamming distance control
+
+## Quick Start
+
+Install dublette:
+
+```bash
+cargo install dublette
 ```
 
-To run tasks interactively:
+Preview duplicates:
 
-```commandline
-mise run
+```bash
+dublette ~/Photos --dry-run
 ```
+
+Delete duplicates:
+
+```bash
+dublette ~/Photos --yes
+```
+
+## Documentation
+
+Full documentation available at [dublette.sripwoud.xyz](https://dublette.sripwoud.xyz):
+
+- [Installation](https://dublette.sripwoud.xyz/#/getting-started/installation) - Detailed setup guide
+- [Quick Start](https://dublette.sripwoud.xyz/#/getting-started/quick-start) - Step-by-step walkthrough
+- [CLI Reference](https://dublette.sripwoud.xyz/#/cli-reference) - All options documented
+- [How It Works](https://dublette.sripwoud.xyz/#/how-it-works/perceptual-hashing) - Perceptual hashing explained
+
+## Requirements
+
+- Rust/Cargo for installation
+- (Optional) ffmpeg for video deduplication
+
+## Community
+
+- [Documentation](https://dublette.sripwoud.xyz)
+- [Report Issues](https://github.com/sripwoud/dublette/issues)

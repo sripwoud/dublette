@@ -83,10 +83,10 @@ dublette ~/Photos --threshold 0 --dry-run
 
 A threshold of `0` requires an exact perceptual hash match. The default of `1` allows a single bit of difference, catching near-identical files that differ slightly due to re-encoding or compression.
 
-See [Perceptual Hashing](how-it-works/perceptual-hashing.md) for more on how the threshold works.
+See [Perceptual Hashing](../how-it-works/perceptual-hashing.md) for more on how the threshold works.
 
 ## Next Steps
 
-- [CLI Reference](cli-reference.md) -- full list of options and flags
-- [Examples](examples.md) -- practical usage scenarios
-- [How It Works](how-it-works/perceptual-hashing.md) -- understand the algorithm
+- [CLI Reference](../cli-reference.md) -- full list of options and flags
+- [Examples](../examples.md) -- practical usage scenarios
+- [How It Works](../how-it-works/perceptual-hashing.md) -- understand the algorithm
