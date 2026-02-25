@@ -1,15 +1,65 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use img_hash::{HashAlg, HasherConfig, ImageHash};
+
+fn hasher() -> img_hash::Hasher {
+    HasherConfig::new()
+        .hash_alg(HashAlg::DoubleGradient)
+        .hash_size(8, 8)
+        .to_hasher()
+}
 
 pub fn compute_image_hash(path: &Path) -> eyre::Result<ImageHash> {
     let img =
         image::open(path).map_err(|e| eyre::eyre!("failed to open {}: {e}", path.display()))?;
-    let hasher = HasherConfig::new()
-        .hash_alg(HashAlg::DoubleGradient)
-        .hash_size(8, 8)
-        .to_hasher();
-    Ok(hasher.hash_image(&img))
+    Ok(hasher().hash_image(&img))
+}
+
+pub fn find_ffmpeg() -> eyre::Result<PathBuf> {
+    which::which("ffmpeg").map_err(|_| eyre::eyre!("ffmpeg not found on PATH"))
+}
+
+fn run_ffmpeg_extract(ffmpeg: &Path, video: &Path, seek: &str, output: &Path) -> bool {
+    Command::new(ffmpeg)
+        .args([
+            "-y",
+            "-ss",
+            seek,
+            "-i",
+            &video.to_string_lossy(),
+            "-frames:v",
+            "1",
+            &output.to_string_lossy(),
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+pub fn extract_video_frame_hash(video: &Path, ffmpeg: &Path) -> eyre::Result<ImageHash> {
+    let tmp = tempfile::NamedTempFile::new()?.into_temp_path();
+    let frame_path = tmp.to_path_buf().with_extension("png");
+
+    for seek in &["1", "0"] {
+        if run_ffmpeg_extract(ffmpeg, video, seek, &frame_path)
+            && frame_path.exists()
+            && std::fs::metadata(&frame_path)?.len() > 0
+        {
+            let img = image::open(&frame_path)
+                .map_err(|e| eyre::eyre!("failed to open extracted frame: {e}"))?;
+            let _ = std::fs::remove_file(&frame_path);
+            return Ok(hasher().hash_image(&img));
+        }
+    }
+
+    let _ = std::fs::remove_file(&frame_path);
+    Err(eyre::eyre!(
+        "ffmpeg could not extract frame from {}",
+        video.display()
+    ))
 }
 
 #[cfg(test)]
@@ -69,5 +119,21 @@ mod tests {
     fn nonexistent_file_errors() {
         let result = compute_image_hash(Path::new("/nonexistent.png"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn ffmpeg_not_at_path_errors() {
+        let result = extract_video_frame_hash(
+            Path::new("/nonexistent.mp4"),
+            Path::new("/nonexistent/ffmpeg"),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn find_ffmpeg_succeeds_when_installed() {
+        if which::which("ffmpeg").is_ok() {
+            assert!(find_ffmpeg().is_ok());
+        }
     }
 }
