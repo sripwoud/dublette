@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center"><a href="https://Dublette.sripwoud.xyz">Auberge</a></h1>
+  <h1 align="center"><a href="https://dublette.sripwoud.xyz">Dublette</a></h1>
 </p>
 <p align="center">
   <a href="https://crates.io/crates/dublette">
