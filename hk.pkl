@@ -5,8 +5,11 @@ local linters  = new Mapping<String, Step> {
     fix = "dprint fmt"
     stage = "*"
   }
-  ["ruff"] {
-    check = "ruff check"
+  ["clippy"] {
+    check = "cargo clippy -- -D warnings"
+  }
+  ["fmt"] {
+    check = "cargo fmt -- --check"
   }
 }
 
@@ -15,6 +18,6 @@ hooks {
     fix = true
     stash = "git"
     steps = linters
-    
+
   }
 }
