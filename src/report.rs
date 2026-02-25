@@ -1,8 +1,23 @@
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
 use tabled::{Table, Tabled};
 
 use crate::scan::DuplicateGroup;
+
+#[derive(Serialize)]
+pub struct JsonReport {
+    pub empty_files: Vec<String>,
+    pub groups: Vec<JsonGroup>,
+    pub total_duplicates: usize,
+    pub dry_run: bool,
+}
+
+#[derive(Serialize)]
+pub struct JsonGroup {
+    pub keep: String,
+    pub duplicates: Vec<String>,
+}
 
 #[derive(Tabled)]
 struct DuplicateRow {
@@ -68,6 +83,24 @@ pub fn format_empty_table(empty_files: &[String], dry_run: bool) -> String {
 
     let header = format!("Empty (0-byte) files ({})", empty_files.len());
     format!("{header}\n{}", Table::new(rows))
+}
+
+pub fn format_json(groups: &[DuplicateGroup], empty_files: &[String], dry_run: bool) -> String {
+    let json_groups: Vec<JsonGroup> = groups
+        .iter()
+        .map(|g| JsonGroup {
+            keep: g.keep.clone(),
+            duplicates: g.duplicates.clone(),
+        })
+        .collect();
+    let total: usize = groups.iter().map(|g| g.duplicates.len()).sum();
+    let report = JsonReport {
+        empty_files: empty_files.to_vec(),
+        groups: json_groups,
+        total_duplicates: total,
+        dry_run,
+    };
+    serde_json::to_string_pretty(&report).expect("JSON serialization should not fail")
 }
 
 pub fn resolve_deletions(groups: &[DuplicateGroup], directory: &Path) -> Vec<PathBuf> {
@@ -140,5 +173,29 @@ mod tests {
         assert_eq!(paths.len(), 2);
         assert_eq!(paths[0], dir.join("b.jpg"));
         assert_eq!(paths[1], dir.join("c.jpg"));
+    }
+
+    #[test]
+    fn json_output_valid() {
+        let groups = vec![DuplicateGroup {
+            keep: "a.jpg".to_string(),
+            duplicates: vec!["b.jpg".to_string()],
+        }];
+        let json = format_json(&groups, &["empty.jpg".to_string()], true);
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["dry_run"], true);
+        assert_eq!(parsed["total_duplicates"], 1);
+        assert_eq!(parsed["empty_files"][0], "empty.jpg");
+        assert_eq!(parsed["groups"][0]["keep"], "a.jpg");
+        assert_eq!(parsed["groups"][0]["duplicates"][0], "b.jpg");
+    }
+
+    #[test]
+    fn json_empty_case() {
+        let json = format_json(&[], &[], false);
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["total_duplicates"], 0);
+        assert!(parsed["groups"].as_array().unwrap().is_empty());
+        assert!(parsed["empty_files"].as_array().unwrap().is_empty());
     }
 }
