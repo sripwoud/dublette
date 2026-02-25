@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod hash;
 pub mod scan;
 
 use cli::Args;
