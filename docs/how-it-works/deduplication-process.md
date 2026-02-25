@@ -23,7 +23,7 @@ The resulting file list is sorted alphabetically. This deterministic ordering en
 
 ## Step 3: Hash Files in Parallel
 
-Each file is hashed using the DoubleGradient perceptual hashing algorithm (see [Perceptual Hashing](how-it-works/perceptual-hashing.md)).
+Each file is hashed using the DoubleGradient perceptual hashing algorithm (see [Perceptual Hashing](perceptual-hashing.md)).
 
 Hashing runs in parallel across all available CPU cores using `rayon`. Files that fail to hash (corrupted, unsupported codec) are skipped with a warning.
 
@@ -70,7 +70,7 @@ Depending on the output mode:
 
 If this is not a dry run and duplicates were found:
 
-1. The list of files to delete is resolved to absolute paths
+1. The list of files to delete is resolved relative to the scanned directory
 2. A confirmation prompt is shown (unless `-y` is set)
 3. Each file is removed from disk
 4. A summary of deleted files is printed to stderr
