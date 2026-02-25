@@ -1,11 +1,26 @@
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::Parser;
 
 use imgdedup::cli::Args;
 
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+pub fn is_interrupted() -> bool {
+    INTERRUPTED.load(Ordering::Relaxed)
+}
+
 fn main() -> ExitCode {
     color_eyre::install().ok();
+
+    ctrlc::set_handler(|| {
+        if INTERRUPTED.swap(true, Ordering::Relaxed) {
+            std::process::exit(130);
+        }
+        eprintln!("\nInterrupted.");
+    })
+    .ok();
 
     let args = Args::parse();
 
