@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use indicatif::{ProgressBar, ProgressStyle};
+use rayon::prelude::*;
 
 use cli::{Args, MediaFilter};
 use scan::{HashedFile, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
@@ -29,28 +30,34 @@ fn make_progress_bar(len: u64, msg: &str, quiet: bool) -> ProgressBar {
 
 fn hash_images(files: &[std::path::PathBuf], directory: &Path, args: &Args) -> Vec<HashedFile> {
     let pb = make_progress_bar(files.len() as u64, "Hashing images", args.quiet);
-    let mut hashes = Vec::new();
 
-    for f in files {
-        match hash::compute_image_hash(f) {
-            Ok(h) => {
-                let rel = f.strip_prefix(directory).unwrap_or(f);
-                let key = rel.to_string_lossy().to_string();
-                if args.verbose {
-                    eprintln!("  {} -> {:?}", key, h);
+    let results: Vec<_> = files
+        .par_iter()
+        .filter_map(|f| {
+            let result = hash::compute_image_hash(f);
+            pb.inc(1);
+            match result {
+                Ok(h) => {
+                    let rel = f.strip_prefix(directory).unwrap_or(f);
+                    let key = rel.to_string_lossy().to_string();
+                    if args.verbose {
+                        eprintln!("  {} -> {:?}", key, h);
+                    }
+                    Some(HashedFile {
+                        relative_path: key,
+                        hash: h,
+                    })
                 }
-                hashes.push(HashedFile {
-                    relative_path: key,
-                    hash: h,
-                });
+                Err(e) => {
+                    eprintln!("  Warning: skipping {}: {e}", f.display());
+                    None
+                }
             }
-            Err(e) => eprintln!("  Warning: skipping {}: {e}", f.display()),
-        }
-        pb.inc(1);
-    }
+        })
+        .collect();
 
     pb.finish_and_clear();
-    hashes
+    results
 }
 
 fn hash_videos(
@@ -60,28 +67,34 @@ fn hash_videos(
     args: &Args,
 ) -> Vec<HashedFile> {
     let pb = make_progress_bar(files.len() as u64, "Hashing videos", args.quiet);
-    let mut hashes = Vec::new();
 
-    for f in files {
-        match hash::extract_video_frame_hash(f, ffmpeg) {
-            Ok(h) => {
-                let rel = f.strip_prefix(directory).unwrap_or(f);
-                let key = rel.to_string_lossy().to_string();
-                if args.verbose {
-                    eprintln!("  {} -> {:?}", key, h);
+    let results: Vec<_> = files
+        .par_iter()
+        .filter_map(|f| {
+            let result = hash::extract_video_frame_hash(f, ffmpeg);
+            pb.inc(1);
+            match result {
+                Ok(h) => {
+                    let rel = f.strip_prefix(directory).unwrap_or(f);
+                    let key = rel.to_string_lossy().to_string();
+                    if args.verbose {
+                        eprintln!("  {} -> {:?}", key, h);
+                    }
+                    Some(HashedFile {
+                        relative_path: key,
+                        hash: h,
+                    })
                 }
-                hashes.push(HashedFile {
-                    relative_path: key,
-                    hash: h,
-                });
+                Err(e) => {
+                    eprintln!("  Warning: skipping {}: {e}", f.display());
+                    None
+                }
             }
-            Err(e) => eprintln!("  Warning: skipping {}: {e}", f.display()),
-        }
-        pb.inc(1);
-    }
+        })
+        .collect();
 
     pb.finish_and_clear();
-    hashes
+    results
 }
 
 fn compare_hashes(
