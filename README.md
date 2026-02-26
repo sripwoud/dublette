@@ -22,7 +22,7 @@ Dublette scans a directory for visually similar media files and removes the dupl
 
 ## Quick Start
 
-Install dublette:
+Install dublette from a [pre-compiled binary](https://github.com/sripwoud/dublette/releases/latest) or via cargo:
 
 ```bash
 cargo install dublette
@@ -51,7 +51,6 @@ Full documentation available at [dublette.sripwoud.xyz](https://dublette.sripwou
 
 ## Requirements
 
-- Rust/Cargo for installation
 - (Optional) ffmpeg for video deduplication
 
 ## Community
