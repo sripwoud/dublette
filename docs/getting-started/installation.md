@@ -2,7 +2,6 @@
 
 ## Prerequisites
 
-- **Rust toolchain** -- required for installation via `cargo`
 - **ffmpeg** -- optional, required only for video deduplication
 
 ### Installing ffmpeg
@@ -32,6 +31,12 @@ sudo pacman -S ffmpeg
 Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to your `PATH`.
 
 Without ffmpeg, dublette will skip video files and print a warning.
+
+## Pre-compiled binaries
+
+Download a binary for your platform from the [latest release](https://github.com/sripwoud/dublette/releases/latest). Binaries are available for Linux (x86_64, aarch64), macOS (Intel, Apple Silicon), and Windows (x64).
+
+Extract it somewhere on your `PATH`, e.g. `~/.local/bin`.
 
 ## Install from crates.io
 
