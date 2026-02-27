@@ -37,4 +37,5 @@ jobs:
           bin: dublette
           target: ${{ matrix.target }}
           ref: refs/tags/${{ inputs.tag }}
+          checksum: sha256
           token: ${{ secrets.GITHUB_TOKEN }}
