@@ -172,6 +172,37 @@ fn yes_flag_deletes_without_prompt() {
 }
 
 #[test]
+fn multiple_directories_cross_dir_duplicates() {
+    let dir1 = tempfile::tempdir().unwrap();
+    let dir2 = tempfile::tempdir().unwrap();
+    create_gradient_image(&dir1.path().join("a.png"), true);
+    create_gradient_image(&dir2.path().join("b.png"), true);
+
+    cmd()
+        .arg(dir1.path())
+        .arg(dir2.path())
+        .arg("-n")
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("would delete"));
+}
+
+#[test]
+fn multiple_directories_no_cross_dir_duplicates() {
+    let dir1 = tempfile::tempdir().unwrap();
+    let dir2 = tempfile::tempdir().unwrap();
+    create_gradient_image(&dir1.path().join("a.png"), true);
+    create_checkerboard_image(&dir2.path().join("b.png"), 10);
+
+    cmd()
+        .arg(dir1.path())
+        .arg(dir2.path())
+        .arg("-n")
+        .assert()
+        .success();
+}
+
+#[test]
 fn verbose_shows_distances() {
     let dir = tempfile::tempdir().unwrap();
     create_gradient_image(&dir.path().join("a.png"), true);

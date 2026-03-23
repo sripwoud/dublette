@@ -1,5 +1,23 @@
 # Examples
 
+## Scan Multiple Directories
+
+Scan several directories together — duplicates across directories are detected:
+
+```bash
+dublette 2020 2021 2022 --dry-run
+```
+
+Use shell glob expansion to match directories by pattern:
+
+```bash
+dublette 202* --dry-run
+dublette ~/Photos/*/RAW --dry-run
+```
+
+This is especially useful for finding photos that were copied across year folders or backup
+directories.
+
 ## Clean Up a Photo Library
 
 Preview duplicates in your photos directory:
