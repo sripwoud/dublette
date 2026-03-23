@@ -1,6 +1,6 @@
 # Deduplication Process
 
-This page describes what happens internally when you run `dublette <DIRECTORY>`.
+This page describes what happens internally when you run `dublette <DIRECTORY>...`.
 
 ## Step 1: Handle Empty Files (Optional)
 
@@ -10,7 +10,7 @@ This step is independent of hashing. A 0-byte file cannot be hashed and is alway
 
 ## Step 2: Collect Files
 
-Dublette walks the directory tree recursively using `walkdir`. For each file:
+Dublette walks each directory tree recursively using `walkdir`. For each file:
 
 1. Check that it is a regular file (not a directory or symlink target without content)
 2. Extract the file extension and lowercase it for case-insensitive matching
@@ -70,7 +70,7 @@ Depending on the output mode:
 
 If this is not a dry run and duplicates were found:
 
-1. The list of files to delete is resolved relative to the scanned directory
+1. The list of files to delete uses paths relative to the current working directory
 2. A confirmation prompt is shown (unless `-y` is set)
 3. Each file is removed from disk
 4. A summary of deleted files is printed to stderr
