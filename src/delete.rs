@@ -55,6 +55,7 @@ pub fn find_empty_files(directories: &[PathBuf]) -> eyre::Result<Vec<PathBuf>> {
     }
 
     empty.sort();
+    empty.dedup();
     Ok(empty)
 }
 
@@ -88,6 +89,17 @@ mod tests {
         assert_eq!(deleted, 1);
         assert!(!a.exists());
         assert!(b.exists());
+    }
+
+    #[test]
+    fn find_empty_files_deduplicates_overlapping_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("empty.jpg"), &[]).unwrap();
+
+        // Pass the same directory twice to simulate overlapping input
+        let dirs = vec![dir.path().to_path_buf(), dir.path().to_path_buf()];
+        let empty = find_empty_files(&dirs).unwrap();
+        assert_eq!(empty.len(), 1);
     }
 
     #[test]
