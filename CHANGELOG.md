@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/sripwoud/dublette/compare/v0.2.0...v0.2.1) - 2026-03-23
+
+### Fixed
+
+- deduplicate empty file paths before deletion ([#24](https://github.com/sripwoud/dublette/pull/24))
+- *(mise)* use `cargo build --release` in build task ([#23](https://github.com/sripwoud/dublette/pull/23))
+
+### Other
+
+- update deduplication-process.md for multi-directory support ([#25](https://github.com/sripwoud/dublette/pull/25))
+
 ## [0.2.0](https://github.com/sripwoud/dublette/compare/v0.1.7...v0.2.0) - 2026-03-23
 
 ### Added
