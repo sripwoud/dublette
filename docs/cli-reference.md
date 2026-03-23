@@ -3,10 +3,20 @@
 ## Usage
 
 ```bash
-dublette <DIRECTORY> [OPTIONS]
+dublette <DIRECTORY>... [OPTIONS]
 ```
 
-The `DIRECTORY` argument is required. Dublette scans it recursively for media files.
+One or more directories are required. Dublette scans all of them recursively and detects
+duplicates across directories as well as within them.
+
+```bash
+dublette ~/Photos
+dublette 2020 2021 2022
+dublette ~/Photos ~/Backup/Photos
+```
+
+Shell glob expansion works naturally — `dublette 202*` expands to all matching directories
+before dublette runs, so no special pattern syntax is needed.
 
 ## Options
 
@@ -104,12 +114,12 @@ dublette ~/Photos --no-color -n
 
 ## Exit Codes
 
-| Code  | Meaning                                                                 |
-| ----- | ----------------------------------------------------------------------- |
-| `0`   | Success (no duplicates found, or duplicates deleted successfully)       |
-| `1`   | Dry-run found duplicates                                                |
-| `2`   | Invalid argument (missing directory, nonexistent path, not a directory) |
-| `130` | Interrupted by Ctrl+C                                                   |
+| Code  | Meaning                                                                   |
+| ----- | ------------------------------------------------------------------------- |
+| `0`   | Success (no duplicates found, or duplicates deleted successfully)         |
+| `1`   | Dry-run found duplicates                                                  |
+| `2`   | Invalid argument (missing directories, nonexistent path, not a directory) |
+| `130` | Interrupted by Ctrl+C                                                     |
 
 The exit code `1` in dry-run mode is intentional: it allows scripts to detect whether duplicates exist without deleting them.
 

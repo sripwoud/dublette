@@ -14,8 +14,8 @@ pub enum MediaFilter {
     about = "Deduplicate images and videos using perceptual hashing"
 )]
 pub struct Args {
-    #[arg(help = "Directory to scan for duplicates")]
-    pub directory: PathBuf,
+    #[arg(help = "Directories to scan for duplicates", num_args = 1.., required = true)]
+    pub directories: Vec<PathBuf>,
 
     #[arg(
         short,
@@ -61,6 +61,7 @@ mod tests {
     #[test]
     fn defaults() {
         let args = parse(&["dublette", "/tmp"]);
+        assert_eq!(args.directories, vec![PathBuf::from("/tmp")]);
         assert_eq!(args.threshold, 1);
         assert!(!args.dry_run);
         assert!(!args.delete_empty);
@@ -70,6 +71,19 @@ mod tests {
         assert!(!args.no_color);
         assert!(!args.json);
         assert!(args.only.is_none());
+    }
+
+    #[test]
+    fn multiple_directories() {
+        let args = parse(&["dublette", "/tmp/a", "/tmp/b", "/tmp/c"]);
+        assert_eq!(
+            args.directories,
+            vec![
+                PathBuf::from("/tmp/a"),
+                PathBuf::from("/tmp/b"),
+                PathBuf::from("/tmp/c")
+            ]
+        );
     }
 
     #[test]

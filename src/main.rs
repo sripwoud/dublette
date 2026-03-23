@@ -20,17 +20,15 @@ fn main() -> ExitCode {
 
     let args = Args::parse();
 
-    if !args.directory.exists() {
-        eprintln!(
-            "error: directory '{}' does not exist",
-            args.directory.display()
-        );
-        return ExitCode::from(2);
-    }
-
-    if !args.directory.is_dir() {
-        eprintln!("error: '{}' is not a directory", args.directory.display());
-        return ExitCode::from(2);
+    for dir in &args.directories {
+        if !dir.exists() {
+            eprintln!("error: directory '{}' does not exist", dir.display());
+            return ExitCode::from(2);
+        }
+        if !dir.is_dir() {
+            eprintln!("error: '{}' is not a directory", dir.display());
+            return ExitCode::from(2);
+        }
     }
 
     match dublette::run(&args) {

@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use img_hash::ImageHash;
 use walkdir::WalkDir;
@@ -28,33 +28,39 @@ pub struct DuplicateGroup {
     pub duplicates: Vec<String>,
 }
 
-pub fn collect_files(directory: &Path, extensions: &HashSet<&str>) -> eyre::Result<Vec<PathBuf>> {
+pub fn collect_files(
+    directories: &[PathBuf],
+    extensions: &HashSet<&str>,
+) -> eyre::Result<Vec<PathBuf>> {
     let mut files: Vec<PathBuf> = Vec::new();
 
-    for entry in WalkDir::new(directory) {
-        let entry = entry?;
-        if !entry.file_type().is_file() {
-            continue;
+    for directory in directories {
+        for entry in WalkDir::new(directory) {
+            let entry = entry?;
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            let ext = match path.extension().and_then(|e| e.to_str()) {
+                Some(e) => e.to_lowercase(),
+                None => continue,
+            };
+
+            if !extensions.contains(ext.as_str()) {
+                continue;
+            }
+
+            if entry.metadata()?.len() == 0 {
+                continue;
+            }
+
+            files.push(path.to_path_buf());
         }
-
-        let path = entry.path();
-        let ext = match path.extension().and_then(|e| e.to_str()) {
-            Some(e) => e.to_lowercase(),
-            None => continue,
-        };
-
-        if !extensions.contains(ext.as_str()) {
-            continue;
-        }
-
-        if entry.metadata()?.len() == 0 {
-            continue;
-        }
-
-        files.push(path.to_path_buf());
     }
 
     files.sort();
+    files.dedup();
     Ok(files)
 }
 
@@ -138,10 +144,14 @@ mod tests {
         IMAGE_EXTENSIONS.iter().copied().collect()
     }
 
+    fn dirs(d: &tempfile::TempDir) -> Vec<PathBuf> {
+        vec![d.path().to_path_buf()]
+    }
+
     #[test]
     fn empty_dir_returns_empty() {
         let dir = tempfile::tempdir().unwrap();
-        let files = collect_files(dir.path(), &image_exts()).unwrap();
+        let files = collect_files(&dirs(&dir), &image_exts()).unwrap();
         assert!(files.is_empty());
     }
 
@@ -152,7 +162,7 @@ mod tests {
         fs::write(dir.path().join("b.txt"), &[0xFF]).unwrap();
         fs::write(dir.path().join("c.png"), &[0xFF]).unwrap();
 
-        let files = collect_files(dir.path(), &image_exts()).unwrap();
+        let files = collect_files(&dirs(&dir), &image_exts()).unwrap();
         let names: Vec<&str> = files
             .iter()
             .filter_map(|p| p.file_name()?.to_str())
@@ -166,7 +176,7 @@ mod tests {
         fs::write(dir.path().join("empty.jpg"), &[]).unwrap();
         fs::write(dir.path().join("valid.jpg"), &[0xFF]).unwrap();
 
-        let files = collect_files(dir.path(), &image_exts()).unwrap();
+        let files = collect_files(&dirs(&dir), &image_exts()).unwrap();
         assert_eq!(files.len(), 1);
         assert!(files[0].file_name().unwrap().to_str().unwrap() == "valid.jpg");
     }
@@ -179,7 +189,7 @@ mod tests {
         fs::write(dir.path().join("a.jpg"), &[0xFF]).unwrap();
         fs::write(sub.join("b.jpg"), &[0xFF]).unwrap();
 
-        let files = collect_files(dir.path(), &image_exts()).unwrap();
+        let files = collect_files(&dirs(&dir), &image_exts()).unwrap();
         assert_eq!(files.len(), 2);
     }
 
@@ -190,7 +200,7 @@ mod tests {
         fs::write(dir.path().join("a.jpg"), &[0xFF]).unwrap();
         fs::write(dir.path().join("b.jpg"), &[0xFF]).unwrap();
 
-        let files = collect_files(dir.path(), &image_exts()).unwrap();
+        let files = collect_files(&dirs(&dir), &image_exts()).unwrap();
         let names: Vec<&str> = files
             .iter()
             .filter_map(|p| p.file_name()?.to_str())
@@ -204,8 +214,30 @@ mod tests {
         fs::write(dir.path().join("a.JPG"), &[0xFF]).unwrap();
         fs::write(dir.path().join("b.Png"), &[0xFF]).unwrap();
 
-        let files = collect_files(dir.path(), &image_exts()).unwrap();
+        let files = collect_files(&dirs(&dir), &image_exts()).unwrap();
         assert_eq!(files.len(), 2);
+    }
+
+    #[test]
+    fn multiple_directories_merged() {
+        let dir1 = tempfile::tempdir().unwrap();
+        let dir2 = tempfile::tempdir().unwrap();
+        fs::write(dir1.path().join("a.jpg"), &[0xFF]).unwrap();
+        fs::write(dir2.path().join("b.jpg"), &[0xFF]).unwrap();
+
+        let directories = vec![dir1.path().to_path_buf(), dir2.path().to_path_buf()];
+        let files = collect_files(&directories, &image_exts()).unwrap();
+        assert_eq!(files.len(), 2);
+    }
+
+    #[test]
+    fn deduplicates_overlapping_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.jpg"), &[0xFF]).unwrap();
+
+        let directories = vec![dir.path().to_path_buf(), dir.path().to_path_buf()];
+        let files = collect_files(&directories, &image_exts()).unwrap();
+        assert_eq!(files.len(), 1);
     }
 
     fn make_hash(bytes: &[u8]) -> ImageHash {
