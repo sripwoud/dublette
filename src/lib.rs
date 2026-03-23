@@ -28,13 +28,17 @@ fn make_progress_bar(len: u64, msg: &str, quiet: bool) -> ProgressBar {
     pb
 }
 
-fn hash_images(files: &[std::path::PathBuf], args: &Args) -> Vec<HashedFile> {
+fn hash_images(
+    files: &[std::path::PathBuf],
+    ffmpeg: Option<&Path>,
+    args: &Args,
+) -> Vec<HashedFile> {
     let pb = make_progress_bar(files.len() as u64, "Hashing images", args.quiet);
 
     let results: Vec<_> = files
         .par_iter()
         .filter_map(|f| {
-            let result = hash::compute_image_hash(f);
+            let result = hash::compute_image_hash(f, ffmpeg);
             pb.inc(1);
             match result {
                 Ok(h) => {
@@ -177,6 +181,7 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
     let mut total_deleted = 0usize;
     let mut all_groups: Vec<scan::DuplicateGroup> = Vec::new();
     let mut empty_files_rel: Vec<String> = Vec::new();
+    let ffmpeg = hash::find_ffmpeg().ok();
 
     if args.delete_empty {
         let empty = delete::find_empty_files(directories)?;
@@ -205,26 +210,26 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
             directories,
             &image_exts,
             "image",
-            hash_images,
+            |files, a| hash_images(files, ffmpeg.as_deref(), a),
             args,
             &mut all_groups,
         )?;
     }
 
     if !matches!(args.only, Some(MediaFilter::Images)) {
-        match hash::find_ffmpeg() {
-            Ok(ffmpeg) => {
+        match &ffmpeg {
+            Some(ffmpeg_path) => {
                 let video_exts: HashSet<&str> = VIDEO_EXTENSIONS.iter().copied().collect();
                 process_media(
                     directories,
                     &video_exts,
                     "video",
-                    |files, a| hash_videos(files, &ffmpeg, a),
+                    |files, a| hash_videos(files, ffmpeg_path, a),
                     args,
                     &mut all_groups,
                 )?;
             }
-            Err(_) => {
+            None => {
                 if !args.quiet && !args.json {
                     eprintln!("Warning: ffmpeg not found, skipping video processing");
                 }
