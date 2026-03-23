@@ -205,4 +205,33 @@ mod tests {
             assert!(find_ffmpeg().is_ok());
         }
     }
+
+    #[test]
+    fn malformed_jpeg_falls_back_to_ffmpeg() {
+        let Ok(ffmpeg) = find_ffmpeg() else { return };
+
+        let dir = tempfile::tempdir().unwrap();
+
+        let valid_path = dir.path().join("valid.jpg");
+        let img: RgbImage = ImageBuffer::from_fn(32, 32, |x, y| Rgb([x as u8 * 8, y as u8 * 8, 0]));
+        img.save(&valid_path).unwrap();
+
+        let jpeg_bytes = std::fs::read(&valid_path).unwrap();
+        assert_eq!(&jpeg_bytes[0..2], &[0xFF, 0xD8]);
+
+        let mut malformed = vec![0xFF, 0xD8, 0xFF, 0xD1];
+        malformed.extend_from_slice(&jpeg_bytes[2..]);
+
+        let malformed_path = dir.path().join("malformed.jpg");
+        std::fs::write(&malformed_path, &malformed).unwrap();
+
+        assert!(
+            image::open(&malformed_path).is_err(),
+            "image crate should reject malformed JPEG"
+        );
+        assert!(
+            compute_image_hash(&malformed_path, Some(&ffmpeg)).is_ok(),
+            "ffmpeg fallback should recover malformed JPEG"
+        );
+    }
 }
