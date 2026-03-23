@@ -28,18 +28,21 @@ fn make_progress_bar(len: u64, msg: &str, quiet: bool) -> ProgressBar {
     pb
 }
 
-fn hash_images(files: &[std::path::PathBuf], directory: &Path, args: &Args) -> Vec<HashedFile> {
+fn hash_images(
+    files: &[std::path::PathBuf],
+    ffmpeg: Option<&Path>,
+    args: &Args,
+) -> Vec<HashedFile> {
     let pb = make_progress_bar(files.len() as u64, "Hashing images", args.quiet);
 
     let results: Vec<_> = files
         .par_iter()
         .filter_map(|f| {
-            let result = hash::compute_image_hash(f);
+            let result = hash::compute_image_hash(f, ffmpeg);
             pb.inc(1);
             match result {
                 Ok(h) => {
-                    let rel = f.strip_prefix(directory).unwrap_or(f);
-                    let key = rel.to_string_lossy().to_string();
+                    let key = f.to_string_lossy().to_string();
                     if args.verbose {
                         eprintln!("  {} -> {:?}", key, h);
                     }
@@ -60,12 +63,7 @@ fn hash_images(files: &[std::path::PathBuf], directory: &Path, args: &Args) -> V
     results
 }
 
-fn hash_videos(
-    files: &[std::path::PathBuf],
-    directory: &Path,
-    ffmpeg: &Path,
-    args: &Args,
-) -> Vec<HashedFile> {
+fn hash_videos(files: &[std::path::PathBuf], ffmpeg: &Path, args: &Args) -> Vec<HashedFile> {
     let pb = make_progress_bar(files.len() as u64, "Hashing videos", args.quiet);
 
     let results: Vec<_> = files
@@ -75,8 +73,7 @@ fn hash_videos(
             pb.inc(1);
             match result {
                 Ok(h) => {
-                    let rel = f.strip_prefix(directory).unwrap_or(f);
-                    let key = rel.to_string_lossy().to_string();
+                    let key = f.to_string_lossy().to_string();
                     if args.verbose {
                         eprintln!("  {} -> {:?}", key, h);
                     }
@@ -145,14 +142,14 @@ fn compare_hashes(
 }
 
 fn process_media(
-    directory: &Path,
+    directories: &[std::path::PathBuf],
     extensions: &HashSet<&str>,
     label: &str,
-    hash_fn: impl Fn(&[std::path::PathBuf], &Path, &Args) -> Vec<HashedFile>,
+    hash_fn: impl Fn(&[std::path::PathBuf], &Args) -> Vec<HashedFile>,
     args: &Args,
     all_groups: &mut Vec<scan::DuplicateGroup>,
 ) -> eyre::Result<()> {
-    let files = scan::collect_files(directory, extensions)?;
+    let files = scan::collect_files(directories, extensions)?;
     if files.is_empty() {
         if !args.json {
             println!("No {label}s found.");
@@ -164,7 +161,7 @@ fn process_media(
         eprintln!("Scanning {} {label}(s)...", files.len());
     }
 
-    let hashes = hash_fn(&files, directory, args);
+    let hashes = hash_fn(&files, args);
     let groups = compare_hashes(&hashes, args.threshold, label, args);
 
     if !args.json {
@@ -180,22 +177,18 @@ fn process_media(
 }
 
 pub fn run(args: &Args) -> eyre::Result<bool> {
-    let directory = &args.directory;
+    let directories = &args.directories;
     let mut total_deleted = 0usize;
     let mut all_groups: Vec<scan::DuplicateGroup> = Vec::new();
     let mut empty_files_rel: Vec<String> = Vec::new();
+    let ffmpeg = hash::find_ffmpeg().ok();
 
     if args.delete_empty {
-        let empty = delete::find_empty_files(directory)?;
+        let empty = delete::find_empty_files(directories)?;
         if !empty.is_empty() {
             empty_files_rel = empty
                 .iter()
-                .map(|p| {
-                    p.strip_prefix(directory)
-                        .unwrap_or(p)
-                        .to_string_lossy()
-                        .to_string()
-                })
+                .map(|p| p.to_string_lossy().to_string())
                 .collect();
 
             if !args.json {
@@ -206,7 +199,7 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
             }
 
             if !args.dry_run {
-                total_deleted += delete::delete_files(&empty, directory, "empty", args.yes)?;
+                total_deleted += delete::delete_files(&empty, "empty", args.yes)?;
             }
         }
     }
@@ -214,29 +207,29 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
     if !matches!(args.only, Some(MediaFilter::Videos)) {
         let image_exts: HashSet<&str> = IMAGE_EXTENSIONS.iter().copied().collect();
         process_media(
-            directory,
+            directories,
             &image_exts,
             "image",
-            hash_images,
+            |files, a| hash_images(files, ffmpeg.as_deref(), a),
             args,
             &mut all_groups,
         )?;
     }
 
     if !matches!(args.only, Some(MediaFilter::Images)) {
-        match hash::find_ffmpeg() {
-            Ok(ffmpeg) => {
+        match &ffmpeg {
+            Some(ffmpeg_path) => {
                 let video_exts: HashSet<&str> = VIDEO_EXTENSIONS.iter().copied().collect();
                 process_media(
-                    directory,
+                    directories,
                     &video_exts,
                     "video",
-                    |files, dir, a| hash_videos(files, dir, &ffmpeg, a),
+                    |files, a| hash_videos(files, ffmpeg_path, a),
                     args,
                     &mut all_groups,
                 )?;
             }
-            Err(_) => {
+            None => {
                 if !args.quiet && !args.json {
                     eprintln!("Warning: ffmpeg not found, skipping video processing");
                 }
@@ -254,8 +247,8 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
     }
 
     if !args.dry_run && found_duplicates {
-        let to_delete = report::resolve_deletions(&all_groups, directory);
-        total_deleted += delete::delete_files(&to_delete, directory, "duplicate", args.yes)?;
+        let to_delete = report::resolve_deletions(&all_groups);
+        total_deleted += delete::delete_files(&to_delete, "duplicate", args.yes)?;
     }
 
     if !args.json {

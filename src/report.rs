@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::Serialize;
 use tabled::{Table, Tabled};
@@ -103,10 +103,10 @@ pub fn format_json(groups: &[DuplicateGroup], empty_files: &[String], dry_run: b
     serde_json::to_string_pretty(&report).expect("JSON serialization should not fail")
 }
 
-pub fn resolve_deletions(groups: &[DuplicateGroup], directory: &Path) -> Vec<PathBuf> {
+pub fn resolve_deletions(groups: &[DuplicateGroup]) -> Vec<PathBuf> {
     groups
         .iter()
-        .flat_map(|g| g.duplicates.iter().map(|d| directory.join(d)))
+        .flat_map(|g| g.duplicates.iter().map(PathBuf::from))
         .collect()
 }
 
@@ -165,14 +165,13 @@ mod tests {
     #[test]
     fn resolve_deletions_returns_duplicate_paths() {
         let groups = vec![DuplicateGroup {
-            keep: "a.jpg".to_string(),
-            duplicates: vec!["b.jpg".to_string(), "c.jpg".to_string()],
+            keep: "2020/a.jpg".to_string(),
+            duplicates: vec!["2021/b.jpg".to_string(), "2021/c.jpg".to_string()],
         }];
-        let dir = Path::new("/tmp/test");
-        let paths = resolve_deletions(&groups, dir);
+        let paths = resolve_deletions(&groups);
         assert_eq!(paths.len(), 2);
-        assert_eq!(paths[0], dir.join("b.jpg"));
-        assert_eq!(paths[1], dir.join("c.jpg"));
+        assert_eq!(paths[0], PathBuf::from("2021/b.jpg"));
+        assert_eq!(paths[1], PathBuf::from("2021/c.jpg"));
     }
 
     #[test]

@@ -1,15 +1,67 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
-set -eu
+set -euo pipefail
+
+readonly ORANGE="\033[33m"
+readonly RESET="\033[0m"
 
 log() {
   printf "%b\n" "$1"
 }
 
-main() {
-  curl -s https://raw.githubusercontent.com/sripwoud/agnostic-template/refs/heads/main/setup | sh
+install_mise() {
+  curl https://mise.run | sh
+  log "Installed ${ORANGE}mise${RESET}"
+}
 
-  cargo build
+maybe_install_mise() {
+  if ! command -v mise >/dev/null; then
+    install_mise
+  fi
+}
+
+configure_smart_commit_editor() {
+  cat >.git/hooks/smart-commit-editor <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -d "$(git rev-parse --git-dir)/rebase-merge" ]] || [[ -d "$(git rev-parse --git-dir)/rebase-apply" ]]; then
+  default_editor=$(git config --global --get core.editor || echo "${EDITOR:-}" || command -v nvim || command -v vim || command -v vi || command -v nano)
+  exec ${default_editor} "$@"
+fi
+
+default_branch=$(git config --get init.defaultBranch || echo "main")
+
+if ! git rev-parse HEAD >/dev/null 2>&1; then
+  current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "${default_branch}")
+else
+  current_branch=$(git rev-parse --abbrev-ref HEAD)
+fi
+
+if [[ "${current_branch}" == "${default_branch}" ]]; then
+  exec convco commit "$@"
+else
+  default_editor=$(git config --global --get core.editor || echo "${EDITOR:-}" || command -v nvim || command -v vim || command -v vi || command -v nano)
+  exec ${default_editor} "$@"
+fi
+EOF
+  chmod +x .git/hooks/smart-commit-editor
+  git config --local core.editor "$(realpath .git/hooks/smart-commit-editor)"
+
+  local default_editor
+  default_editor=$(git config --global --get core.editor || echo "${EDITOR:-}" || command -v nvim || command -v vim || command -v vi || command -v nano)
+  if [[ -n "${default_editor}" ]]; then
+    git config --local sequence.editor "${default_editor}"
+  fi
+}
+
+main() {
+  maybe_install_mise
+  mise up --bump
+  log "To see available tasks: ${ORANGE}mise run${RESET}"
+  configure_smart_commit_editor
+  hk install
+  cargo build --release
   log "Built dublette"
 }
 
