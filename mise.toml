@@ -1,6 +1,6 @@
 [tasks.build]
 alias = "b"
-run = "cargo run --release"
+run = "cargo build --release"
 silent = true
 
 [tasks.dublette]
