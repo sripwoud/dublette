@@ -1,16 +1,11 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use walkdir::WalkDir;
 
 use crate::scan;
 
-pub fn delete_files(
-    paths: &[PathBuf],
-    directory: &Path,
-    label: &str,
-    yes: bool,
-) -> eyre::Result<usize> {
+pub fn delete_files(paths: &[PathBuf], label: &str, yes: bool) -> eyre::Result<usize> {
     if paths.is_empty() {
         return Ok(0);
     }
@@ -25,37 +20,37 @@ pub fn delete_files(
     let mut deleted = 0;
     for path in paths {
         fs::remove_file(path)?;
-        if let Ok(rel) = path.strip_prefix(directory) {
-            eprintln!("  Deleted: {}", rel.display());
-        }
+        eprintln!("  Deleted: {}", path.display());
         deleted += 1;
     }
 
     Ok(deleted)
 }
 
-pub fn find_empty_files(directory: &Path) -> eyre::Result<Vec<PathBuf>> {
+pub fn find_empty_files(directories: &[PathBuf]) -> eyre::Result<Vec<PathBuf>> {
     let media_exts = scan::all_media_extensions();
     let mut empty: Vec<PathBuf> = Vec::new();
 
-    for entry in WalkDir::new(directory) {
-        let entry = entry?;
-        if !entry.file_type().is_file() {
-            continue;
-        }
+    for directory in directories {
+        for entry in WalkDir::new(directory) {
+            let entry = entry?;
+            if !entry.file_type().is_file() {
+                continue;
+            }
 
-        let path = entry.path();
-        let ext = match path.extension().and_then(|e| e.to_str()) {
-            Some(e) => e.to_lowercase(),
-            None => continue,
-        };
+            let path = entry.path();
+            let ext = match path.extension().and_then(|e| e.to_str()) {
+                Some(e) => e.to_lowercase(),
+                None => continue,
+            };
 
-        if !media_exts.contains(ext.as_str()) {
-            continue;
-        }
+            if !media_exts.contains(ext.as_str()) {
+                continue;
+            }
 
-        if entry.metadata()?.len() == 0 {
-            empty.push(path.to_path_buf());
+            if entry.metadata()?.len() == 0 {
+                empty.push(path.to_path_buf());
+            }
         }
     }
 
@@ -76,7 +71,7 @@ mod tests {
         fs::write(dir.path().join("valid.jpg"), &[0xFF]).unwrap();
         fs::write(dir.path().join("empty.txt"), &[]).unwrap();
 
-        let empty = find_empty_files(dir.path()).unwrap();
+        let empty = find_empty_files(&[dir.path().to_path_buf()]).unwrap();
         assert_eq!(empty.len(), 1);
         assert!(empty[0].file_name().unwrap().to_str().unwrap() == "empty.jpg");
     }
@@ -89,7 +84,7 @@ mod tests {
         fs::write(&a, &[0xFF]).unwrap();
         fs::write(&b, &[0xFF]).unwrap();
 
-        let deleted = delete_files(&[a.clone()], dir.path(), "image", true).unwrap();
+        let deleted = delete_files(&[a.clone()], "image", true).unwrap();
         assert_eq!(deleted, 1);
         assert!(!a.exists());
         assert!(b.exists());
@@ -97,8 +92,7 @@ mod tests {
 
     #[test]
     fn delete_files_empty_list_returns_zero() {
-        let dir = tempfile::tempdir().unwrap();
-        let deleted = delete_files(&[], dir.path(), "image", true).unwrap();
+        let deleted = delete_files(&[], "image", true).unwrap();
         assert_eq!(deleted, 0);
     }
 }
