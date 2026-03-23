@@ -29,12 +29,20 @@ fn ffmpeg_decode_image(path: &Path, ffmpeg: &Path) -> eyre::Result<image::Dynami
         .map_err(|e| eyre::eyre!("failed to run ffmpeg: {e}"))?;
 
     if !status.success() {
+        let _ = std::fs::remove_file(&output);
         return Err(eyre::eyre!("ffmpeg failed to decode {}", path.display()));
     }
 
-    let img = image::open(&output).map_err(|e| eyre::eyre!("failed to open ffmpeg output: {e}"))?;
-    let _ = std::fs::remove_file(&output);
-    Ok(img)
+    match image::open(&output) {
+        Ok(img) => {
+            let _ = std::fs::remove_file(&output);
+            Ok(img)
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&output);
+            Err(eyre::eyre!("failed to open ffmpeg output: {e}"))
+        }
+    }
 }
 
 pub fn compute_image_hash(path: &Path, ffmpeg: Option<&Path>) -> eyre::Result<ImageHash> {
@@ -42,8 +50,12 @@ pub fn compute_image_hash(path: &Path, ffmpeg: Option<&Path>) -> eyre::Result<Im
         Ok(img) => Ok(hasher().hash_image(&img)),
         Err(e) => match ffmpeg {
             Some(ffmpeg_path) => {
-                let img = ffmpeg_decode_image(path, ffmpeg_path)
-                    .map_err(|_| eyre::eyre!("failed to open {}: {e}", path.display()))?;
+                let img = ffmpeg_decode_image(path, ffmpeg_path).map_err(|ffmpeg_err| {
+                    eyre::eyre!(
+                        "failed to open {}: image error: {e}; ffmpeg error: {ffmpeg_err}",
+                        path.display()
+                    )
+                })?;
                 Ok(hasher().hash_image(&img))
             }
             None => Err(eyre::eyre!("failed to open {}: {e}", path.display())),
