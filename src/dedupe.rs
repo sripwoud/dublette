@@ -41,7 +41,6 @@ pub struct DeduplicationReport {
     pub groups: Vec<DuplicateGroup>,
     pub empty_files: Vec<PathBuf>,
     pub skipped: Vec<SkippedFile>,
-    pub to_delete: Vec<PathBuf>,
 }
 
 pub trait Progress: Sync {
@@ -136,8 +135,13 @@ pub fn plan(
             hash::compute_image_hash(p)
         });
         skipped.extend(image_skipped);
-        let adjacency = scan::pairwise_compare(&hashed, config.threshold);
-        groups.extend(scan::build_duplicate_groups(&adjacency, MediaKind::Image));
+        groups.extend(compare_and_build_groups(
+            &hashed,
+            config.threshold,
+            progress,
+            "image",
+            MediaKind::Image,
+        ));
     }
 
     if !matches!(config.only, Some(MediaKind::Image))
@@ -149,24 +153,62 @@ pub fn plan(
             hash::extract_video_frame_hash(p, &ffmpeg)
         });
         skipped.extend(video_skipped);
-        let adjacency = scan::pairwise_compare(&hashed, config.threshold);
-        groups.extend(scan::build_duplicate_groups(&adjacency, MediaKind::Video));
-    }
-
-    let mut to_delete: Vec<PathBuf> = groups
-        .iter()
-        .flat_map(|g| g.duplicates.iter().cloned())
-        .collect();
-    if config.include_empty {
-        to_delete.extend(empty_files.iter().cloned());
+        groups.extend(compare_and_build_groups(
+            &hashed,
+            config.threshold,
+            progress,
+            "video",
+            MediaKind::Video,
+        ));
     }
 
     Ok(DeduplicationReport {
         groups,
         empty_files,
         skipped,
-        to_delete,
     })
+}
+
+fn compare_and_build_groups(
+    hashed: &[HashedFile],
+    threshold: u32,
+    progress: &dyn Progress,
+    label: &str,
+    kind: MediaKind,
+) -> Vec<DuplicateGroup> {
+    let total_pairs = (hashed.len() * hashed.len().saturating_sub(1)) / 2;
+    progress.phase_start(&format!("Comparing {label}s"), total_pairs as u64);
+
+    let mut adjacency = std::collections::HashMap::new();
+    for h in hashed {
+        adjacency.entry(h.path.clone()).or_insert_with(Vec::new);
+    }
+
+    for i in 0..hashed.len() {
+        for j in (i + 1)..hashed.len() {
+            let distance = hashed[i].hash.dist(&hashed[j].hash);
+            progress.diag(format_args!(
+                "{} <-> {}: distance={}",
+                hashed[i].path.display(),
+                hashed[j].path.display(),
+                distance
+            ));
+            if distance <= threshold {
+                adjacency
+                    .entry(hashed[i].path.clone())
+                    .or_default()
+                    .push(hashed[j].path.clone());
+                adjacency
+                    .entry(hashed[j].path.clone())
+                    .or_default()
+                    .push(hashed[i].path.clone());
+            }
+            progress.tick();
+        }
+    }
+
+    progress.phase_finish();
+    scan::build_duplicate_groups(&adjacency, kind)
 }
 
 fn hash_in_parallel<F>(
@@ -325,7 +367,6 @@ mod tests {
         assert!(report.groups.is_empty());
         assert!(report.empty_files.is_empty());
         assert!(report.skipped.is_empty());
-        assert!(report.to_delete.is_empty());
     }
 
     #[test]
@@ -444,7 +485,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_include_empty_populates_empty_files_and_to_delete() {
+    fn plan_include_empty_populates_empty_files() {
         let dir = tempfile::tempdir().unwrap();
         let empty = dir.path().join("empty.jpg");
         std::fs::write(&empty, []).unwrap();
@@ -456,8 +497,7 @@ mod tests {
         };
         let report = plan(&dirs(&dir), &config, &NoopProgress).unwrap();
 
-        assert_eq!(report.empty_files, vec![empty.clone()]);
-        assert!(report.to_delete.contains(&empty));
+        assert_eq!(report.empty_files, vec![empty]);
     }
 
     #[test]
@@ -469,7 +509,6 @@ mod tests {
         let report = plan(&dirs(&dir), &default_config(), &NoopProgress).unwrap();
 
         assert!(report.empty_files.is_empty());
-        assert!(!report.to_delete.contains(&empty));
     }
 
     #[test]
@@ -491,20 +530,6 @@ mod tests {
             !skipped[0].reason.is_empty(),
             "skipped reason should describe the failure"
         );
-    }
-
-    #[test]
-    fn plan_to_delete_uses_pathbuf_not_string() {
-        let dir = tempfile::tempdir().unwrap();
-        let a = dir.path().join("a.png");
-        let b = dir.path().join("b.png");
-        write_gradient(&a);
-        write_gradient(&b);
-
-        let report = plan(&dirs(&dir), &default_config(), &NoopProgress).unwrap();
-
-        let _: &Vec<PathBuf> = &report.to_delete;
-        assert_eq!(report.to_delete, vec![b]);
     }
 
     #[test]

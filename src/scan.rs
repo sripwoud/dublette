@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use walkdir::WalkDir;
 
-use crate::dedupe::{DuplicateGroup, HashedFile, MediaKind};
+use crate::dedupe::{DuplicateGroup, MediaKind};
 
 pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp"];
 
@@ -53,31 +53,6 @@ pub fn collect_files(
     files.sort();
     files.dedup();
     Ok(files)
-}
-
-pub fn pairwise_compare(hashes: &[HashedFile], threshold: u32) -> HashMap<PathBuf, Vec<PathBuf>> {
-    let mut duplicates: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
-    for h in hashes {
-        duplicates.entry(h.path.clone()).or_default();
-    }
-
-    for i in 0..hashes.len() {
-        for j in (i + 1)..hashes.len() {
-            let distance = hashes[i].hash.dist(&hashes[j].hash);
-            if distance <= threshold {
-                duplicates
-                    .entry(hashes[i].path.clone())
-                    .or_default()
-                    .push(hashes[j].path.clone());
-                duplicates
-                    .entry(hashes[j].path.clone())
-                    .or_default()
-                    .push(hashes[i].path.clone());
-            }
-        }
-    }
-
-    duplicates
 }
 
 pub fn build_duplicate_groups(
@@ -132,8 +107,6 @@ pub fn build_duplicate_groups(
 #[cfg(test)]
 mod tests {
     use std::fs;
-
-    use img_hash::ImageHash;
 
     use super::*;
 
@@ -237,10 +210,6 @@ mod tests {
         assert_eq!(files.len(), 1);
     }
 
-    fn make_hash(bytes: &[u8]) -> ImageHash {
-        ImageHash::from_bytes(bytes).unwrap()
-    }
-
     #[test]
     fn grouping_empty_input() {
         let duplicates = HashMap::new();
@@ -307,64 +276,5 @@ mod tests {
         let groups = build_duplicate_groups(&duplicates, MediaKind::Image);
         assert_eq!(groups[0].keep, PathBuf::from("a.jpg"));
         assert_eq!(groups[0].duplicates, vec![PathBuf::from("z.jpg")]);
-    }
-
-    #[test]
-    fn pairwise_finds_duplicates() {
-        let hash_a = make_hash(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        let hash_b = make_hash(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        let hash_c = make_hash(&[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
-
-        let hashes = vec![
-            HashedFile {
-                path: PathBuf::from("a.jpg"),
-                hash: hash_a,
-            },
-            HashedFile {
-                path: PathBuf::from("b.jpg"),
-                hash: hash_b,
-            },
-            HashedFile {
-                path: PathBuf::from("c.jpg"),
-                hash: hash_c,
-            },
-        ];
-
-        let result = pairwise_compare(&hashes, 1);
-        assert_eq!(
-            result[&PathBuf::from("a.jpg")],
-            vec![PathBuf::from("b.jpg")]
-        );
-        assert_eq!(
-            result[&PathBuf::from("b.jpg")],
-            vec![PathBuf::from("a.jpg")]
-        );
-        assert!(result[&PathBuf::from("c.jpg")].is_empty());
-    }
-
-    #[test]
-    fn pairwise_respects_threshold() {
-        let hash_a = make_hash(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        let hash_b = make_hash(&[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-
-        let hashes = vec![
-            HashedFile {
-                path: PathBuf::from("a.jpg"),
-                hash: hash_a.clone(),
-            },
-            HashedFile {
-                path: PathBuf::from("b.jpg"),
-                hash: hash_b,
-            },
-        ];
-
-        let strict = pairwise_compare(&hashes, 0);
-        assert!(strict[&PathBuf::from("a.jpg")].is_empty());
-
-        let lenient = pairwise_compare(&hashes, 1);
-        assert_eq!(
-            lenient[&PathBuf::from("a.jpg")],
-            vec![PathBuf::from("b.jpg")]
-        );
     }
 }
