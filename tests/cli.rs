@@ -96,6 +96,20 @@ fn no_duplicates_exits_0() {
 }
 
 #[test]
+fn no_duplicates_prints_reassurance_message() {
+    let dir = tempfile::tempdir().unwrap();
+    create_gradient_image(&dir.path().join("a.png"), true);
+    create_checkerboard_image(&dir.path().join("b.png"), 10);
+
+    cmd()
+        .arg(dir.path())
+        .arg("-n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No duplicates found."));
+}
+
+#[test]
 fn only_images_skips_videos() {
     let dir = tempfile::tempdir().unwrap();
     create_gradient_image(&dir.path().join("a.png"), true);

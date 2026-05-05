@@ -50,6 +50,8 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
         }
         if found_duplicates {
             println!("{}", report::format_table(&dedup_report, args.dry_run));
+        } else if dedup_report.empty_files.is_empty() {
+            println!("No duplicates found.");
         }
     }
 
