@@ -136,8 +136,13 @@ pub fn plan(
             hash::compute_image_hash(p)
         });
         skipped.extend(image_skipped);
-        let adjacency = scan::pairwise_compare(&hashed, config.threshold);
-        groups.extend(scan::build_duplicate_groups(&adjacency, MediaKind::Image));
+        groups.extend(compare_and_build_groups(
+            &hashed,
+            config.threshold,
+            progress,
+            "image",
+            MediaKind::Image,
+        ));
     }
 
     if !matches!(config.only, Some(MediaKind::Image))
@@ -149,8 +154,13 @@ pub fn plan(
             hash::extract_video_frame_hash(p, &ffmpeg)
         });
         skipped.extend(video_skipped);
-        let adjacency = scan::pairwise_compare(&hashed, config.threshold);
-        groups.extend(scan::build_duplicate_groups(&adjacency, MediaKind::Video));
+        groups.extend(compare_and_build_groups(
+            &hashed,
+            config.threshold,
+            progress,
+            "video",
+            MediaKind::Video,
+        ));
     }
 
     let mut to_delete: Vec<PathBuf> = groups
@@ -167,6 +177,48 @@ pub fn plan(
         skipped,
         to_delete,
     })
+}
+
+fn compare_and_build_groups(
+    hashed: &[HashedFile],
+    threshold: u32,
+    progress: &dyn Progress,
+    label: &str,
+    kind: MediaKind,
+) -> Vec<DuplicateGroup> {
+    let total_pairs = (hashed.len() * hashed.len().saturating_sub(1)) / 2;
+    progress.phase_start(&format!("Comparing {label}s"), total_pairs as u64);
+
+    let mut adjacency = std::collections::HashMap::new();
+    for h in hashed {
+        adjacency.entry(h.path.clone()).or_insert_with(Vec::new);
+    }
+
+    for i in 0..hashed.len() {
+        for j in (i + 1)..hashed.len() {
+            let distance = hashed[i].hash.dist(&hashed[j].hash);
+            progress.diag(format_args!(
+                "{} <-> {}: distance={}",
+                hashed[i].path.display(),
+                hashed[j].path.display(),
+                distance
+            ));
+            if distance <= threshold {
+                adjacency
+                    .entry(hashed[i].path.clone())
+                    .or_default()
+                    .push(hashed[j].path.clone());
+                adjacency
+                    .entry(hashed[j].path.clone())
+                    .or_default()
+                    .push(hashed[i].path.clone());
+            }
+            progress.tick();
+        }
+    }
+
+    progress.phase_finish();
+    scan::build_duplicate_groups(&adjacency, kind)
 }
 
 fn hash_in_parallel<F>(
