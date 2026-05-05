@@ -41,12 +41,10 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
         println!("{}", report::format_json(&dedup_report, args.dry_run));
     } else {
         if !dedup_report.empty_files.is_empty() {
-            let empty_strs: Vec<String> = dedup_report
-                .empty_files
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect();
-            println!("{}", report::format_empty_table(&empty_strs, args.dry_run));
+            println!(
+                "{}",
+                report::format_empty_table(&dedup_report.empty_files, args.dry_run)
+            );
         }
         if found_duplicates {
             println!("{}", report::format_table(&dedup_report, args.dry_run));

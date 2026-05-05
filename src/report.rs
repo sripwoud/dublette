@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use tabled::{Table, Tabled};
 
 use crate::dedupe::{DeduplicationReport, MediaKind};
@@ -62,11 +64,11 @@ pub fn format_table(report: &DeduplicationReport, dry_run: bool) -> String {
     format!("{header}\n{}", Table::new(rows))
 }
 
-pub fn format_empty_table(empty_files: &[String], dry_run: bool) -> String {
+pub fn format_empty_table(empty_files: &[PathBuf], dry_run: bool) -> String {
     let rows: Vec<EmptyRow> = empty_files
         .iter()
         .map(|f| EmptyRow {
-            file: f.clone(),
+            file: f.display().to_string(),
             action: if dry_run {
                 "would delete".to_string()
             } else {
@@ -191,7 +193,7 @@ mod tests {
 
     #[test]
     fn empty_table_shows_count() {
-        let files = vec!["a.jpg".to_string(), "b.jpg".to_string()];
+        let files = vec![PathBuf::from("a.jpg"), PathBuf::from("b.jpg")];
         let output = format_empty_table(&files, true);
         assert!(output.contains("2"));
         assert!(output.contains("would delete"));
