@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -47,7 +48,7 @@ pub trait Progress: Sync {
     fn phase_start(&self, label: &str, total: u64);
     fn tick(&self);
     fn phase_finish(&self);
-    fn diag(&self, msg: &str);
+    fn diag(&self, args: fmt::Arguments<'_>);
 }
 
 pub struct NoopProgress;
@@ -56,7 +57,7 @@ impl Progress for NoopProgress {
     fn phase_start(&self, _label: &str, _total: u64) {}
     fn tick(&self) {}
     fn phase_finish(&self) {}
-    fn diag(&self, _msg: &str) {}
+    fn diag(&self, _args: fmt::Arguments<'_>) {}
 }
 
 pub struct IndicatifProgress {
@@ -107,9 +108,9 @@ impl Progress for IndicatifProgress {
         }
     }
 
-    fn diag(&self, msg: &str) {
+    fn diag(&self, args: fmt::Arguments<'_>) {
         if self.verbose {
-            eprintln!("  {msg}");
+            eprintln!("  {args}");
         }
     }
 }
@@ -185,7 +186,7 @@ where
             progress.tick();
             match outcome {
                 Ok(h) => {
-                    progress.diag(&format!("{} -> {:?}", f.display(), h));
+                    progress.diag(format_args!("{} -> {:?}", f.display(), h));
                     Ok(HashedFile {
                         path: f.clone(),
                         hash: h,
@@ -223,7 +224,7 @@ mod tests {
         p.phase_start("test", 10);
         p.tick();
         p.tick();
-        p.diag("hello");
+        p.diag(format_args!("hello"));
         p.phase_finish();
     }
 
@@ -259,8 +260,8 @@ mod tests {
             self.events.lock().unwrap().push("finish".to_string());
         }
 
-        fn diag(&self, msg: &str) {
-            self.events.lock().unwrap().push(format!("diag:{msg}"));
+        fn diag(&self, args: fmt::Arguments<'_>) {
+            self.events.lock().unwrap().push(format!("diag:{args}"));
         }
     }
 
@@ -299,7 +300,7 @@ mod tests {
         p.phase_start("hashing", 3);
         p.tick();
         p.tick();
-        p.diag("a -> 0xff");
+        p.diag(format_args!("a -> 0xff"));
         p.tick();
         p.phase_finish();
 
