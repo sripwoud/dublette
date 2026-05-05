@@ -1,15 +1,24 @@
 use tabled::{Table, Tabled};
 
-use crate::dedupe::DeduplicationReport;
+use crate::dedupe::{DeduplicationReport, MediaKind};
 
 #[derive(Tabled)]
 struct DuplicateRow {
     #[tabled(rename = "Group")]
     group: String,
+    #[tabled(rename = "Kind")]
+    kind: String,
     #[tabled(rename = "File")]
     file: String,
     #[tabled(rename = "Action")]
     action: String,
+}
+
+fn kind_label(kind: MediaKind) -> &'static str {
+    match kind {
+        MediaKind::Image => "image",
+        MediaKind::Video => "video",
+    }
 }
 
 #[derive(Tabled)]
@@ -26,12 +35,14 @@ pub fn format_table(report: &DeduplicationReport, dry_run: bool) -> String {
     for (i, group) in report.groups.iter().enumerate() {
         rows.push(DuplicateRow {
             group: (i + 1).to_string(),
+            kind: kind_label(group.kind).to_string(),
             file: group.keep.display().to_string(),
             action: "keep".to_string(),
         });
         for dup in &group.duplicates {
             rows.push(DuplicateRow {
                 group: String::new(),
+                kind: String::new(),
                 file: dup.display().to_string(),
                 action: if dry_run {
                     "would delete".to_string()
@@ -156,6 +167,26 @@ mod tests {
         let output = format_table(&report, false);
         assert!(output.contains("2 group(s)"));
         assert!(output.contains("3 to remove"));
+    }
+
+    #[test]
+    fn table_renders_kind_per_group() {
+        let report = make_report(vec![
+            DuplicateGroup {
+                kind: MediaKind::Image,
+                keep: PathBuf::from("a.jpg"),
+                duplicates: vec![PathBuf::from("b.jpg")],
+            },
+            DuplicateGroup {
+                kind: MediaKind::Video,
+                keep: PathBuf::from("c.mp4"),
+                duplicates: vec![PathBuf::from("d.mp4")],
+            },
+        ]);
+        let output = format_table(&report, false);
+        assert!(output.contains("image"));
+        assert!(output.contains("video"));
+        assert!(output.contains("Kind"));
     }
 
     #[test]
