@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use img_hash::ImageHash;
 use indicatif::{ProgressBar, ProgressStyle};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -18,6 +19,24 @@ pub struct Config {
 pub struct SkippedFile {
     pub path: PathBuf,
     pub reason: String,
+}
+
+pub struct HashedFile {
+    pub path: PathBuf,
+    pub hash: ImageHash,
+}
+
+pub struct DuplicateGroup {
+    pub kind: MediaKind,
+    pub keep: PathBuf,
+    pub duplicates: Vec<PathBuf>,
+}
+
+pub struct DeduplicationReport {
+    pub groups: Vec<DuplicateGroup>,
+    pub empty_files: Vec<PathBuf>,
+    pub skipped: Vec<SkippedFile>,
+    pub to_delete: Vec<PathBuf>,
 }
 
 pub trait Progress: Sync {

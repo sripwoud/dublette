@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use img_hash::ImageHash;
 use walkdir::WalkDir;
+
+use crate::dedupe::{DuplicateGroup, HashedFile, MediaKind};
 
 pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp"];
 
@@ -16,16 +17,6 @@ pub fn all_media_extensions() -> HashSet<&'static str> {
         .chain(VIDEO_EXTENSIONS.iter())
         .copied()
         .collect()
-}
-
-pub struct HashedFile {
-    pub relative_path: String,
-    pub hash: ImageHash,
-}
-
-pub struct DuplicateGroup {
-    pub keep: String,
-    pub duplicates: Vec<String>,
 }
 
 pub fn collect_files(
@@ -64,10 +55,10 @@ pub fn collect_files(
     Ok(files)
 }
 
-pub fn pairwise_compare(hashes: &[HashedFile], threshold: u32) -> HashMap<String, Vec<String>> {
-    let mut duplicates: HashMap<String, Vec<String>> = HashMap::new();
+pub fn pairwise_compare(hashes: &[HashedFile], threshold: u32) -> HashMap<PathBuf, Vec<PathBuf>> {
+    let mut duplicates: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
     for h in hashes {
-        duplicates.entry(h.relative_path.clone()).or_default();
+        duplicates.entry(h.path.clone()).or_default();
     }
 
     for i in 0..hashes.len() {
@@ -75,13 +66,13 @@ pub fn pairwise_compare(hashes: &[HashedFile], threshold: u32) -> HashMap<String
             let distance = hashes[i].hash.dist(&hashes[j].hash);
             if distance <= threshold {
                 duplicates
-                    .entry(hashes[i].relative_path.clone())
+                    .entry(hashes[i].path.clone())
                     .or_default()
-                    .push(hashes[j].relative_path.clone());
+                    .push(hashes[j].path.clone());
                 duplicates
-                    .entry(hashes[j].relative_path.clone())
+                    .entry(hashes[j].path.clone())
                     .or_default()
-                    .push(hashes[i].relative_path.clone());
+                    .push(hashes[i].path.clone());
             }
         }
     }
@@ -89,11 +80,14 @@ pub fn pairwise_compare(hashes: &[HashedFile], threshold: u32) -> HashMap<String
     duplicates
 }
 
-pub fn build_duplicate_groups(duplicates: &HashMap<String, Vec<String>>) -> Vec<DuplicateGroup> {
-    let mut visited: HashSet<String> = HashSet::new();
+pub fn build_duplicate_groups(
+    duplicates: &HashMap<PathBuf, Vec<PathBuf>>,
+    kind: MediaKind,
+) -> Vec<DuplicateGroup> {
+    let mut visited: HashSet<PathBuf> = HashSet::new();
     let mut groups: Vec<DuplicateGroup> = Vec::new();
 
-    let mut keys: Vec<&String> = duplicates.keys().collect();
+    let mut keys: Vec<&PathBuf> = duplicates.keys().collect();
     keys.sort();
 
     for filename in keys {
@@ -102,9 +96,9 @@ pub fn build_duplicate_groups(duplicates: &HashMap<String, Vec<String>>) -> Vec<
             continue;
         }
 
-        let mut group: HashSet<String> = HashSet::new();
+        let mut group: HashSet<PathBuf> = HashSet::new();
         group.insert(filename.clone());
-        let mut stack: Vec<String> = dupes.clone();
+        let mut stack: Vec<PathBuf> = dupes.clone();
 
         while let Some(current) = stack.pop() {
             if group.contains(&current) {
@@ -122,10 +116,11 @@ pub fn build_duplicate_groups(duplicates: &HashMap<String, Vec<String>>) -> Vec<
 
         visited.extend(group.iter().cloned());
 
-        let mut sorted: Vec<String> = group.into_iter().collect();
+        let mut sorted: Vec<PathBuf> = group.into_iter().collect();
         sorted.sort();
         let keep = sorted.remove(0);
         groups.push(DuplicateGroup {
+            kind,
             keep,
             duplicates: sorted,
         });
@@ -137,6 +132,8 @@ pub fn build_duplicate_groups(duplicates: &HashMap<String, Vec<String>>) -> Vec<
 #[cfg(test)]
 mod tests {
     use std::fs;
+
+    use img_hash::ImageHash;
 
     use super::*;
 
@@ -247,66 +244,69 @@ mod tests {
     #[test]
     fn grouping_empty_input() {
         let duplicates = HashMap::new();
-        let groups = build_duplicate_groups(&duplicates);
+        let groups = build_duplicate_groups(&duplicates, MediaKind::Image);
         assert!(groups.is_empty());
     }
 
     #[test]
     fn grouping_no_duplicates() {
-        let mut duplicates = HashMap::new();
-        duplicates.insert("a.jpg".to_string(), vec![]);
-        duplicates.insert("b.jpg".to_string(), vec![]);
-        let groups = build_duplicate_groups(&duplicates);
+        let mut duplicates: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
+        duplicates.insert(PathBuf::from("a.jpg"), vec![]);
+        duplicates.insert(PathBuf::from("b.jpg"), vec![]);
+        let groups = build_duplicate_groups(&duplicates, MediaKind::Image);
         assert!(groups.is_empty());
     }
 
     #[test]
     fn grouping_single_pair() {
-        let mut duplicates = HashMap::new();
-        duplicates.insert("a.jpg".to_string(), vec!["b.jpg".to_string()]);
-        duplicates.insert("b.jpg".to_string(), vec!["a.jpg".to_string()]);
-        let groups = build_duplicate_groups(&duplicates);
+        let mut duplicates: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
+        duplicates.insert(PathBuf::from("a.jpg"), vec![PathBuf::from("b.jpg")]);
+        duplicates.insert(PathBuf::from("b.jpg"), vec![PathBuf::from("a.jpg")]);
+        let groups = build_duplicate_groups(&duplicates, MediaKind::Image);
         assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].keep, "a.jpg");
-        assert_eq!(groups[0].duplicates, vec!["b.jpg"]);
+        assert_eq!(groups[0].keep, PathBuf::from("a.jpg"));
+        assert_eq!(groups[0].duplicates, vec![PathBuf::from("b.jpg")]);
     }
 
     #[test]
     fn grouping_transitive() {
-        let mut duplicates = HashMap::new();
-        duplicates.insert("a.jpg".to_string(), vec!["b.jpg".to_string()]);
+        let mut duplicates: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
+        duplicates.insert(PathBuf::from("a.jpg"), vec![PathBuf::from("b.jpg")]);
         duplicates.insert(
-            "b.jpg".to_string(),
-            vec!["a.jpg".to_string(), "c.jpg".to_string()],
+            PathBuf::from("b.jpg"),
+            vec![PathBuf::from("a.jpg"), PathBuf::from("c.jpg")],
         );
-        duplicates.insert("c.jpg".to_string(), vec!["b.jpg".to_string()]);
-        let groups = build_duplicate_groups(&duplicates);
+        duplicates.insert(PathBuf::from("c.jpg"), vec![PathBuf::from("b.jpg")]);
+        let groups = build_duplicate_groups(&duplicates, MediaKind::Image);
         assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].keep, "a.jpg");
-        assert_eq!(groups[0].duplicates, vec!["b.jpg", "c.jpg"]);
+        assert_eq!(groups[0].keep, PathBuf::from("a.jpg"));
+        assert_eq!(
+            groups[0].duplicates,
+            vec![PathBuf::from("b.jpg"), PathBuf::from("c.jpg")]
+        );
     }
 
     #[test]
     fn grouping_two_separate_groups() {
-        let mut duplicates = HashMap::new();
-        duplicates.insert("a.jpg".to_string(), vec!["b.jpg".to_string()]);
-        duplicates.insert("b.jpg".to_string(), vec!["a.jpg".to_string()]);
-        duplicates.insert("c.jpg".to_string(), vec!["d.jpg".to_string()]);
-        duplicates.insert("d.jpg".to_string(), vec!["c.jpg".to_string()]);
-        let groups = build_duplicate_groups(&duplicates);
+        let mut duplicates: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
+        duplicates.insert(PathBuf::from("a.jpg"), vec![PathBuf::from("b.jpg")]);
+        duplicates.insert(PathBuf::from("b.jpg"), vec![PathBuf::from("a.jpg")]);
+        duplicates.insert(PathBuf::from("c.jpg"), vec![PathBuf::from("d.jpg")]);
+        duplicates.insert(PathBuf::from("d.jpg"), vec![PathBuf::from("c.jpg")]);
+        let groups = build_duplicate_groups(&duplicates, MediaKind::Image);
         assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0].keep, "a.jpg");
-        assert_eq!(groups[1].keep, "c.jpg");
+        assert_eq!(groups[0].keep, PathBuf::from("a.jpg"));
+        assert_eq!(groups[1].keep, PathBuf::from("c.jpg"));
     }
 
     #[test]
     fn grouping_keeps_first_alphabetically() {
-        let mut duplicates = HashMap::new();
-        duplicates.insert("z.jpg".to_string(), vec!["a.jpg".to_string()]);
-        duplicates.insert("a.jpg".to_string(), vec!["z.jpg".to_string()]);
-        let groups = build_duplicate_groups(&duplicates);
-        assert_eq!(groups[0].keep, "a.jpg");
-        assert_eq!(groups[0].duplicates, vec!["z.jpg"]);
+        let mut duplicates: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
+        duplicates.insert(PathBuf::from("z.jpg"), vec![PathBuf::from("a.jpg")]);
+        duplicates.insert(PathBuf::from("a.jpg"), vec![PathBuf::from("z.jpg")]);
+        let groups = build_duplicate_groups(&duplicates, MediaKind::Image);
+        assert_eq!(groups[0].keep, PathBuf::from("a.jpg"));
+        assert_eq!(groups[0].duplicates, vec![PathBuf::from("z.jpg")]);
     }
 
     #[test]
@@ -317,23 +317,29 @@ mod tests {
 
         let hashes = vec![
             HashedFile {
-                relative_path: "a.jpg".to_string(),
+                path: PathBuf::from("a.jpg"),
                 hash: hash_a,
             },
             HashedFile {
-                relative_path: "b.jpg".to_string(),
+                path: PathBuf::from("b.jpg"),
                 hash: hash_b,
             },
             HashedFile {
-                relative_path: "c.jpg".to_string(),
+                path: PathBuf::from("c.jpg"),
                 hash: hash_c,
             },
         ];
 
         let result = pairwise_compare(&hashes, 1);
-        assert_eq!(result["a.jpg"], vec!["b.jpg"]);
-        assert_eq!(result["b.jpg"], vec!["a.jpg"]);
-        assert!(result["c.jpg"].is_empty());
+        assert_eq!(
+            result[&PathBuf::from("a.jpg")],
+            vec![PathBuf::from("b.jpg")]
+        );
+        assert_eq!(
+            result[&PathBuf::from("b.jpg")],
+            vec![PathBuf::from("a.jpg")]
+        );
+        assert!(result[&PathBuf::from("c.jpg")].is_empty());
     }
 
     #[test]
@@ -343,19 +349,22 @@ mod tests {
 
         let hashes = vec![
             HashedFile {
-                relative_path: "a.jpg".to_string(),
+                path: PathBuf::from("a.jpg"),
                 hash: hash_a.clone(),
             },
             HashedFile {
-                relative_path: "b.jpg".to_string(),
+                path: PathBuf::from("b.jpg"),
                 hash: hash_b,
             },
         ];
 
         let strict = pairwise_compare(&hashes, 0);
-        assert!(strict["a.jpg"].is_empty());
+        assert!(strict[&PathBuf::from("a.jpg")].is_empty());
 
         let lenient = pairwise_compare(&hashes, 1);
-        assert_eq!(lenient["a.jpg"], vec!["b.jpg"]);
+        assert_eq!(
+            lenient[&PathBuf::from("a.jpg")],
+            vec![PathBuf::from("b.jpg")]
+        );
     }
 }

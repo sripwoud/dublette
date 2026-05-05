@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 use tabled::{Table, Tabled};
 
-use crate::scan::DuplicateGroup;
+use crate::dedupe::DuplicateGroup;
 
 #[derive(Serialize)]
 pub struct JsonReport {
@@ -43,13 +43,13 @@ pub fn format_table(groups: &[DuplicateGroup], dry_run: bool, label: &str) -> St
     for (i, group) in groups.iter().enumerate() {
         rows.push(DuplicateRow {
             group: (i + 1).to_string(),
-            file: group.keep.clone(),
+            file: group.keep.display().to_string(),
             action: "keep".to_string(),
         });
         for dup in &group.duplicates {
             rows.push(DuplicateRow {
                 group: String::new(),
-                file: dup.clone(),
+                file: dup.display().to_string(),
                 action: if dry_run {
                     "would delete".to_string()
                 } else {
@@ -89,8 +89,12 @@ pub fn format_json(groups: &[DuplicateGroup], empty_files: &[String], dry_run: b
     let json_groups: Vec<JsonGroup> = groups
         .iter()
         .map(|g| JsonGroup {
-            keep: g.keep.clone(),
-            duplicates: g.duplicates.clone(),
+            keep: g.keep.display().to_string(),
+            duplicates: g
+                .duplicates
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect(),
         })
         .collect();
     let total: usize = groups.iter().map(|g| g.duplicates.len()).sum();
@@ -106,19 +110,24 @@ pub fn format_json(groups: &[DuplicateGroup], empty_files: &[String], dry_run: b
 pub fn resolve_deletions(groups: &[DuplicateGroup]) -> Vec<PathBuf> {
     groups
         .iter()
-        .flat_map(|g| g.duplicates.iter().map(PathBuf::from))
+        .flat_map(|g| g.duplicates.iter().cloned())
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use crate::dedupe::MediaKind;
+
     use super::*;
 
     #[test]
     fn table_contains_keep_and_delete() {
         let groups = vec![DuplicateGroup {
-            keep: "a.jpg".to_string(),
-            duplicates: vec!["b.jpg".to_string()],
+            kind: MediaKind::Image,
+            keep: PathBuf::from("a.jpg"),
+            duplicates: vec![PathBuf::from("b.jpg")],
         }];
         let output = format_table(&groups, false, "image");
         assert!(output.contains("keep"));
@@ -130,8 +139,9 @@ mod tests {
     #[test]
     fn dry_run_shows_would_delete() {
         let groups = vec![DuplicateGroup {
-            keep: "a.jpg".to_string(),
-            duplicates: vec!["b.jpg".to_string()],
+            kind: MediaKind::Image,
+            keep: PathBuf::from("a.jpg"),
+            duplicates: vec![PathBuf::from("b.jpg")],
         }];
         let output = format_table(&groups, true, "image");
         assert!(output.contains("would delete"));
@@ -141,12 +151,14 @@ mod tests {
     fn table_header_shows_counts() {
         let groups = vec![
             DuplicateGroup {
-                keep: "a.jpg".to_string(),
-                duplicates: vec!["b.jpg".to_string(), "c.jpg".to_string()],
+                kind: MediaKind::Image,
+                keep: PathBuf::from("a.jpg"),
+                duplicates: vec![PathBuf::from("b.jpg"), PathBuf::from("c.jpg")],
             },
             DuplicateGroup {
-                keep: "d.jpg".to_string(),
-                duplicates: vec!["e.jpg".to_string()],
+                kind: MediaKind::Image,
+                keep: PathBuf::from("d.jpg"),
+                duplicates: vec![PathBuf::from("e.jpg")],
             },
         ];
         let output = format_table(&groups, false, "image");
@@ -165,8 +177,9 @@ mod tests {
     #[test]
     fn resolve_deletions_returns_duplicate_paths() {
         let groups = vec![DuplicateGroup {
-            keep: "2020/a.jpg".to_string(),
-            duplicates: vec!["2021/b.jpg".to_string(), "2021/c.jpg".to_string()],
+            kind: MediaKind::Image,
+            keep: PathBuf::from("2020/a.jpg"),
+            duplicates: vec![PathBuf::from("2021/b.jpg"), PathBuf::from("2021/c.jpg")],
         }];
         let paths = resolve_deletions(&groups);
         assert_eq!(paths.len(), 2);
@@ -177,8 +190,9 @@ mod tests {
     #[test]
     fn json_output_valid() {
         let groups = vec![DuplicateGroup {
-            keep: "a.jpg".to_string(),
-            duplicates: vec!["b.jpg".to_string()],
+            kind: MediaKind::Image,
+            keep: PathBuf::from("a.jpg"),
+            duplicates: vec![PathBuf::from("b.jpg")],
         }];
         let json = format_json(&groups, &["empty.jpg".to_string()], true);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
