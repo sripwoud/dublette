@@ -12,7 +12,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 
 use cli::{Args, MediaFilter};
-use scan::{HashedFile, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
+use dedupe::{DuplicateGroup, HashedFile, MediaKind};
+use scan::{IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
 
 fn make_progress_bar(len: u64, msg: &str, quiet: bool) -> ProgressBar {
     if quiet {
@@ -39,12 +40,11 @@ fn hash_images(files: &[std::path::PathBuf], args: &Args) -> Vec<HashedFile> {
             pb.inc(1);
             match result {
                 Ok(h) => {
-                    let key = f.to_string_lossy().to_string();
                     if args.verbose {
-                        eprintln!("  {} -> {:?}", key, h);
+                        eprintln!("  {} -> {:?}", f.display(), h);
                     }
                     Some(HashedFile {
-                        relative_path: key,
+                        path: f.clone(),
                         hash: h,
                     })
                 }
@@ -70,12 +70,11 @@ fn hash_videos(files: &[std::path::PathBuf], ffmpeg: &Path, args: &Args) -> Vec<
             pb.inc(1);
             match result {
                 Ok(h) => {
-                    let key = f.to_string_lossy().to_string();
                     if args.verbose {
-                        eprintln!("  {} -> {:?}", key, h);
+                        eprintln!("  {} -> {:?}", f.display(), h);
                     }
                     Some(HashedFile {
-                        relative_path: key,
+                        path: f.clone(),
                         hash: h,
                     })
                 }
@@ -95,8 +94,9 @@ fn compare_hashes(
     hashes: &[HashedFile],
     threshold: u32,
     label: &str,
+    kind: MediaKind,
     args: &Args,
-) -> Vec<scan::DuplicateGroup> {
+) -> Vec<DuplicateGroup> {
     let total_pairs = (hashes.len() * hashes.len().saturating_sub(1)) / 2;
     let pb = make_progress_bar(
         total_pairs as u64,
@@ -106,9 +106,7 @@ fn compare_hashes(
 
     let mut duplicates = std::collections::HashMap::new();
     for h in hashes {
-        duplicates
-            .entry(h.relative_path.clone())
-            .or_insert_with(Vec::new);
+        duplicates.entry(h.path.clone()).or_insert_with(Vec::new);
     }
 
     for i in 0..hashes.len() {
@@ -117,34 +115,37 @@ fn compare_hashes(
             if args.verbose {
                 eprintln!(
                     "  {} <-> {}: distance={}",
-                    hashes[i].relative_path, hashes[j].relative_path, distance
+                    hashes[i].path.display(),
+                    hashes[j].path.display(),
+                    distance
                 );
             }
             if distance <= threshold {
                 duplicates
-                    .entry(hashes[i].relative_path.clone())
+                    .entry(hashes[i].path.clone())
                     .or_default()
-                    .push(hashes[j].relative_path.clone());
+                    .push(hashes[j].path.clone());
                 duplicates
-                    .entry(hashes[j].relative_path.clone())
+                    .entry(hashes[j].path.clone())
                     .or_default()
-                    .push(hashes[i].relative_path.clone());
+                    .push(hashes[i].path.clone());
             }
             pb.inc(1);
         }
     }
 
     pb.finish_and_clear();
-    scan::build_duplicate_groups(&duplicates)
+    scan::build_duplicate_groups(&duplicates, kind)
 }
 
 fn process_media(
     directories: &[std::path::PathBuf],
     extensions: &HashSet<&str>,
     label: &str,
+    kind: MediaKind,
     hash_fn: impl Fn(&[std::path::PathBuf], &Args) -> Vec<HashedFile>,
     args: &Args,
-    all_groups: &mut Vec<scan::DuplicateGroup>,
+    all_groups: &mut Vec<DuplicateGroup>,
 ) -> eyre::Result<()> {
     let files = scan::collect_files(directories, extensions)?;
     if files.is_empty() {
@@ -159,7 +160,7 @@ fn process_media(
     }
 
     let hashes = hash_fn(&files, args);
-    let groups = compare_hashes(&hashes, args.threshold, label, args);
+    let groups = compare_hashes(&hashes, args.threshold, label, kind, args);
 
     if !args.json {
         if groups.is_empty() {
@@ -176,7 +177,7 @@ fn process_media(
 pub fn run(args: &Args) -> eyre::Result<bool> {
     let directories = &args.directories;
     let mut total_deleted = 0usize;
-    let mut all_groups: Vec<scan::DuplicateGroup> = Vec::new();
+    let mut all_groups: Vec<DuplicateGroup> = Vec::new();
     let mut empty_files_rel: Vec<String> = Vec::new();
 
     if args.delete_empty {
@@ -206,6 +207,7 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
             directories,
             &image_exts,
             "image",
+            MediaKind::Image,
             hash_images,
             args,
             &mut all_groups,
@@ -220,6 +222,7 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
                     directories,
                     &video_exts,
                     "video",
+                    MediaKind::Video,
                     |files, a| hash_videos(files, &ffmpeg, a),
                     args,
                     &mut all_groups,
