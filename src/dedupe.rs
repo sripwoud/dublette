@@ -41,7 +41,6 @@ pub struct DeduplicationReport {
     pub groups: Vec<DuplicateGroup>,
     pub empty_files: Vec<PathBuf>,
     pub skipped: Vec<SkippedFile>,
-    pub to_delete: Vec<PathBuf>,
 }
 
 pub trait Progress: Sync {
@@ -163,19 +162,10 @@ pub fn plan(
         ));
     }
 
-    let mut to_delete: Vec<PathBuf> = groups
-        .iter()
-        .flat_map(|g| g.duplicates.iter().cloned())
-        .collect();
-    if config.include_empty {
-        to_delete.extend(empty_files.iter().cloned());
-    }
-
     Ok(DeduplicationReport {
         groups,
         empty_files,
         skipped,
-        to_delete,
     })
 }
 
@@ -377,7 +367,6 @@ mod tests {
         assert!(report.groups.is_empty());
         assert!(report.empty_files.is_empty());
         assert!(report.skipped.is_empty());
-        assert!(report.to_delete.is_empty());
     }
 
     #[test]
@@ -496,7 +485,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_include_empty_populates_empty_files_and_to_delete() {
+    fn plan_include_empty_populates_empty_files() {
         let dir = tempfile::tempdir().unwrap();
         let empty = dir.path().join("empty.jpg");
         std::fs::write(&empty, []).unwrap();
@@ -508,8 +497,7 @@ mod tests {
         };
         let report = plan(&dirs(&dir), &config, &NoopProgress).unwrap();
 
-        assert_eq!(report.empty_files, vec![empty.clone()]);
-        assert!(report.to_delete.contains(&empty));
+        assert_eq!(report.empty_files, vec![empty]);
     }
 
     #[test]
@@ -521,7 +509,6 @@ mod tests {
         let report = plan(&dirs(&dir), &default_config(), &NoopProgress).unwrap();
 
         assert!(report.empty_files.is_empty());
-        assert!(!report.to_delete.contains(&empty));
     }
 
     #[test]
@@ -543,20 +530,6 @@ mod tests {
             !skipped[0].reason.is_empty(),
             "skipped reason should describe the failure"
         );
-    }
-
-    #[test]
-    fn plan_to_delete_uses_pathbuf_not_string() {
-        let dir = tempfile::tempdir().unwrap();
-        let a = dir.path().join("a.png");
-        let b = dir.path().join("b.png");
-        write_gradient(&a);
-        write_gradient(&b);
-
-        let report = plan(&dirs(&dir), &default_config(), &NoopProgress).unwrap();
-
-        let _: &Vec<PathBuf> = &report.to_delete;
-        assert_eq!(report.to_delete, vec![b]);
     }
 
     #[test]

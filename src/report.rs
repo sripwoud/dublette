@@ -111,7 +111,6 @@ mod tests {
             groups,
             empty_files: vec![],
             skipped: vec![],
-            to_delete: vec![],
         }
     }
 
@@ -177,7 +176,6 @@ mod tests {
             }],
             empty_files: vec![PathBuf::from("empty.jpg")],
             skipped: vec![],
-            to_delete: vec![PathBuf::from("b.jpg")],
         };
         let json = format_json(&report, true);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -196,23 +194,5 @@ mod tests {
         assert_eq!(parsed["total_duplicates"], 0);
         assert!(parsed["groups"].as_array().unwrap().is_empty());
         assert!(parsed["empty_files"].as_array().unwrap().is_empty());
-    }
-
-    // Ensure the removed resolve_deletions tests are replaced by plan() tests in dedupe.rs
-    #[test]
-    fn report_to_delete_contains_duplicate_paths() {
-        let report = DeduplicationReport {
-            groups: vec![DuplicateGroup {
-                kind: MediaKind::Image,
-                keep: PathBuf::from("2020/a.jpg"),
-                duplicates: vec![PathBuf::from("2021/b.jpg"), PathBuf::from("2021/c.jpg")],
-            }],
-            empty_files: vec![],
-            skipped: vec![],
-            to_delete: vec![PathBuf::from("2021/b.jpg"), PathBuf::from("2021/c.jpg")],
-        };
-        assert_eq!(report.to_delete.len(), 2);
-        assert_eq!(report.to_delete[0], PathBuf::from("2021/b.jpg"));
-        assert_eq!(report.to_delete[1], PathBuf::from("2021/c.jpg"));
     }
 }
