@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/sripwoud/dublette/compare/v0.2.1...v0.3.0) - 2026-05-05
+
+### Added
+
+- *(dedupe)* implement plan() function ([#33](https://github.com/sripwoud/dublette/pull/33))
+- *(dedupe)* wire dedupe module into lib.rs
+
+### Other
+
+- *(lib)* switch run() to use dedupe::plan() and slim shell ([#34](https://github.com/sripwoud/dublette/pull/34))
+- *(dedupe)* migrate DuplicateGroup and HashedFile to PathBuf in dedupe module ([#32](https://github.com/sripwoud/dublette/pull/32))
+- add CONTEXT, ADR-0001, and plan for dedupe core extraction
+- add meta folder
+
 ## [0.2.1](https://github.com/sripwoud/dublette/compare/v0.2.0...v0.2.1) - 2026-03-23
 
 ### Fixed
