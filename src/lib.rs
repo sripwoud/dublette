@@ -5,6 +5,8 @@ pub mod hash;
 pub mod report;
 pub mod scan;
 
+use std::path::PathBuf;
+
 use cli::{Args, MediaFilter};
 use dedupe::{Config, IndicatifProgress, MediaKind, NoopProgress};
 
@@ -53,21 +55,23 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
         }
     }
 
-    let mut total_deleted = 0usize;
-
-    if !args.dry_run {
+    let total_deleted = if args.dry_run {
+        0
+    } else {
+        let mut count = 0usize;
         if !dedup_report.empty_files.is_empty() {
-            total_deleted += delete::delete_files(&dedup_report.empty_files, "empty", args.yes)?;
+            count += delete::delete_files(&dedup_report.empty_files, "empty", args.yes)?;
         }
         if found_duplicates {
-            let dup_paths: Vec<std::path::PathBuf> = dedup_report
+            let dup_paths: Vec<PathBuf> = dedup_report
                 .groups
                 .iter()
                 .flat_map(|g| g.duplicates.iter().cloned())
                 .collect();
-            total_deleted += delete::delete_files(&dup_paths, "duplicate", args.yes)?;
+            count += delete::delete_files(&dup_paths, "duplicate", args.yes)?;
         }
-    }
+        count
+    };
 
     if !args.json {
         if args.dry_run && found_duplicates {
