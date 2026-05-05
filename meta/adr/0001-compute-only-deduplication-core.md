@@ -1,0 +1,3 @@
+# Compute-only deduplication core
+
+The `dedupe` module exposes `plan(dirs, config, progress) -> DeduplicationReport` and returns a pure value; the CLI shell handles all I/O (rendering, prompting, deletion). We rejected a `plan` + `apply` split (Terraform-style) and a `Confirmer` trait because both would introduce hypothetical seams — only one CLI confirmer adapter exists today, and per `LANGUAGE.md` a seam is real only when ≥2 adapters exist. A future second confirmer (library API, non-interactive policy file, GUI) would be the trigger to revisit; until then a small inline `dialoguer::Confirm` call in the shell is the right shape. The `Progress` trait is the _one_ abstraction that did pass the two-adapter test (CLI indicatif + test no-op + `--quiet` no-op).
