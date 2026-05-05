@@ -229,3 +229,17 @@ fn verbose_shows_distances() {
         .code(1)
         .stderr(predicate::str::contains("distance="));
 }
+
+#[test]
+fn verbose_with_json_still_shows_distances() {
+    let dir = tempfile::tempdir().unwrap();
+    create_gradient_image(&dir.path().join("a.png"), true);
+    create_gradient_image(&dir.path().join("b.png"), true);
+
+    cmd()
+        .arg(dir.path())
+        .args(["-n", "-v", "--json"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("distance="));
+}

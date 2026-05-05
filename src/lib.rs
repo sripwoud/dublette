@@ -19,7 +19,7 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
         include_empty: args.delete_empty,
     };
 
-    let progress: Box<dyn dedupe::Progress> = if args.quiet || args.json {
+    let progress: Box<dyn dedupe::Progress> = if args.quiet {
         Box::new(NoopProgress)
     } else {
         Box::new(IndicatifProgress::new(args.verbose))
