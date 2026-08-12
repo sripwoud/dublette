@@ -161,16 +161,45 @@ When `--json` is used, stdout contains a single JSON object:
     }
   ],
   "total_duplicates": 2,
-  "dry_run": false
+  "dry_run": false,
+  "skipped": [
+    {
+      "path": "music/corrupt.mp3",
+      "reason": "decode_failed",
+      "detail": "ffmpeg could not decode audio from music/corrupt.mp3"
+    }
+  ],
+  "total_skipped": 1,
+  "warnings": ["ffmpeg not found on PATH; skipping video pass"]
 }
 ```
 
-| Field              | Type             | Description                                                           |
-| ------------------ | ---------------- | --------------------------------------------------------------------- |
-| `empty_files`      | array of strings | Relative paths of 0-byte files (only populated with `--delete-empty`) |
-| `groups`           | array of objects | Each group contains a `keep` path and a `duplicates` array            |
-| `total_duplicates` | integer          | Total number of files marked for deletion                             |
-| `dry_run`          | boolean          | Whether this was a dry run                                            |
+| Field              | Type             | Description                                                             |
+| ------------------ | ---------------- | ----------------------------------------------------------------------- |
+| `empty_files`      | array of strings | Relative paths of 0-byte files (only populated with `--delete-empty`)   |
+| `groups`           | array of objects | Each group contains a `keep` path and a `duplicates` array              |
+| `total_duplicates` | integer          | Total number of files marked for deletion                               |
+| `dry_run`          | boolean          | Whether this was a dry run                                              |
+| `skipped`          | array of objects | Files that could not be hashed; each has `path`, `reason`, and `detail` |
+| `total_skipped`    | integer          | Number of entries in `skipped`                                          |
+| `warnings`         | array of strings | Pass-level warnings, such as an entire media pass being skipped         |
+
+All seven fields are always present. `skipped` and `warnings` are `[]` and `total_skipped` is `0` when a run processes every file.
+
+Skipped files are the reason a result is a floor, not a total: a file that was never fingerprinted is a file whose duplicate cannot have been found. The same entries are also printed to stderr as `Warning: skipping <path>: <detail>` regardless of `--json`.
+
+### Skip Reasons
+
+`reason` is a stable tag safe to branch on. `detail` is the human-readable message and may change between releases.
+
+| Tag                     | Meaning                                                                                                                     |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `decode_failed`         | The file's content could not be decoded -- corrupt image, ffmpeg decode failure, no usable video frame. Worth investigating |
+| `too_short`             | Audio decoded but was too short (under ~3 seconds) to yield an acoustic fingerprint                                         |
+| `unsupported_container` | No tag parser understands the container. Expected for wma under `--audio-match encoding`                                    |
+| `unreadable`            | The file could not be read at all -- permissions, I/O error, or a failed tag-region exclusion                               |
+
+New tags may be added in future releases; a consumer matching on `reason` should tolerate unknown values.
 
 ## Supported File Formats
 
