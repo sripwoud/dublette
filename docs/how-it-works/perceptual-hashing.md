@@ -20,15 +20,15 @@ The hash captures the overall structure -- gradients, edges, brightness patterns
 
 ## DoubleGradient Algorithm
 
-Dublette uses the **DoubleGradient** algorithm from the `img_hash` crate with an 8x8 hash size.
+Dublette uses the **DoubleGradient** algorithm from the `image_hasher` crate with an 8x8 hash size.
 
 DoubleGradient works by:
 
-1. Resizing the image to a small grid (9x8 for horizontal gradients, 8x9 for vertical)
+1. Resizing the image to a small grayscale grid (5x5 for an 8x8 hash size)
 2. Computing brightness gradients in both horizontal and vertical directions
 3. Encoding whether each gradient increases or decreases as a single bit
 
-This produces a 128-bit hash (8x8 horizontal + 8x8 vertical = 128 gradient comparisons). The result is a compact binary fingerprint that is robust to scaling, minor color shifts, and compression artifacts.
+This produces a 40-bit hash (5 rows x 4 horizontal comparisons + 5 columns x 4 vertical comparisons). The result is a compact binary fingerprint that is robust to scaling, minor color shifts, and compression artifacts.
 
 DoubleGradient was chosen over alternatives (Mean, Gradient, Blockhash) because it provides a good balance of accuracy and resistance to false positives. It captures directional structure in the image, making it more discriminating than simpler averaging methods.
 
