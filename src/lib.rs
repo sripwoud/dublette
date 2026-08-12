@@ -5,6 +5,7 @@ pub mod delete;
 pub mod hash;
 pub mod report;
 pub mod scan;
+pub mod skip;
 
 use std::path::PathBuf;
 
@@ -47,7 +48,7 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
         eprintln!(
             "Warning: skipping {}: {}",
             skipped.path.display(),
-            skipped.reason
+            skipped.detail
         );
     }
 

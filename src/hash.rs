@@ -3,6 +3,8 @@ use std::process::Command;
 
 use image_hasher::{HashAlg, HasherConfig, ImageHash};
 
+use crate::skip::{SkipError, SkipReason};
+
 fn hasher() -> image_hasher::Hasher {
     HasherConfig::new()
         .hash_alg(HashAlg::DoubleGradient)
@@ -10,9 +12,15 @@ fn hasher() -> image_hasher::Hasher {
         .to_hasher()
 }
 
-pub fn compute_image_hash(path: &Path) -> eyre::Result<ImageHash> {
-    let img =
-        image::open(path).map_err(|e| eyre::eyre!("failed to open {}: {e}", path.display()))?;
+pub fn compute_image_hash(path: &Path) -> Result<ImageHash, SkipError> {
+    let img = image::open(path).map_err(|e| {
+        let reason = if matches!(e, image::ImageError::IoError(_)) {
+            SkipReason::Unreadable
+        } else {
+            SkipReason::DecodeFailed
+        };
+        SkipError::new(reason, format!("failed to open {}: {e}", path.display()))
+    })?;
     Ok(hasher().hash_image(&img))
 }
 
@@ -39,7 +47,7 @@ fn run_ffmpeg_extract(ffmpeg: &Path, video: &Path, seek: &str, output: &Path) ->
         .unwrap_or(false)
 }
 
-pub fn extract_video_frame_hash(video: &Path, ffmpeg: &Path) -> eyre::Result<ImageHash> {
+pub fn extract_video_frame_hash(video: &Path, ffmpeg: &Path) -> Result<ImageHash, SkipError> {
     let tmp = tempfile::NamedTempFile::new()?.into_temp_path();
     let frame_path = tmp.to_path_buf().with_extension("png");
 
@@ -48,17 +56,21 @@ pub fn extract_video_frame_hash(video: &Path, ffmpeg: &Path) -> eyre::Result<Ima
             && frame_path.exists()
             && std::fs::metadata(&frame_path)?.len() > 0
         {
-            let img = image::open(&frame_path)
-                .map_err(|e| eyre::eyre!("failed to open extracted frame: {e}"))?;
+            let img = image::open(&frame_path).map_err(|e| {
+                SkipError::new(
+                    SkipReason::DecodeFailed,
+                    format!("failed to open extracted frame: {e}"),
+                )
+            })?;
             let _ = std::fs::remove_file(&frame_path);
             return Ok(hasher().hash_image(&img));
         }
     }
 
     let _ = std::fs::remove_file(&frame_path);
-    Err(eyre::eyre!(
-        "ffmpeg could not extract frame from {}",
-        video.display()
+    Err(SkipError::new(
+        SkipReason::DecodeFailed,
+        format!("ffmpeg could not extract frame from {}", video.display()),
     ))
 }
 
