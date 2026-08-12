@@ -34,7 +34,9 @@ fn help_output() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Deduplicate images and videos"));
+        .stdout(predicate::str::contains(
+            "Deduplicate images, videos, and audio",
+        ));
 }
 
 #[test]

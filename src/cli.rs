@@ -14,7 +14,7 @@ pub enum MediaFilter {
 #[derive(Parser)]
 #[command(
     name = "dublette",
-    about = "Deduplicate images and videos using perceptual hashing"
+    about = "Deduplicate images, videos, and audio using perceptual hashing and acoustic fingerprints"
 )]
 pub struct Args {
     #[arg(help = "Directories to scan for duplicates", num_args = 1.., required = true)]

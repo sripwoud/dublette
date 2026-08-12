@@ -4,7 +4,7 @@ version = "0.3.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/sripwoud/dublette"
-description = "Deduplicate images and videos using perceptual hashing"
+description = "Deduplicate images, videos, and audio using perceptual hashing and acoustic fingerprints"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

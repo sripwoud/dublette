@@ -14,10 +14,10 @@ Dublette walks each directory tree recursively using `walkdir`. For each file:
 
 1. Check that it is a regular file (not a directory or symlink target without content)
 2. Extract the file extension and lowercase it for case-insensitive matching
-3. Match against supported extensions (images: jpg, jpeg, png, bmp, gif, tiff, webp; videos: mp4, mov, avi, mkv, wmv, flv, webm, m4v, 3gp)
+3. Match against supported extensions (images: jpg, jpeg, png, bmp, gif, tiff, webp; videos: mp4, mov, avi, mkv, wmv, flv, webm, m4v, 3gp; audio: mp3, flac, ogg, opus, m4a, aac, wav, wma, aiff)
 4. Skip files with 0 bytes
 
-The `--only` flag restricts which extension set is used. Without it, both image and video extensions are processed in separate passes.
+The `--only` flag restricts which extension set is used. Without it, image, video, and audio extensions are processed in separate passes.
 
 The resulting file list is sorted alphabetically. This deterministic ordering ensures consistent results across runs.
 
@@ -45,11 +45,21 @@ This means video deduplication compares a representative frame, not the full vid
 
 If ffmpeg is not installed, video processing is skipped entirely with a warning.
 
+### Audio Fingerprinting (recording match)
+
+Under the default `--audio-match recording`, ffmpeg decodes up to the first 120 seconds of each audio file to mono PCM, which is piped in-process to a Chromaprint-class fingerprinter. The resulting acoustic fingerprint captures what the audio sounds like, independent of codec, bitrate, or tags. Audio tracks embedded in video files are never fingerprinted.
+
+If ffmpeg is not installed, the audio pass is skipped with a warning (encoding match still works).
+
+### Audio Stream Hashing (encoding match)
+
+Under `--audio-match encoding`, each file is copied to a temporary location, all tags are stripped, and the remaining encoded stream is hashed. Files group only on exact stream equality: a retagged copy matches, a re-encode never does. No decoding happens, so ffmpeg is not required.
+
 ## Step 4: Pairwise Comparison
 
-Every pair of hashes is compared using hamming distance. This is an O(n^2) operation over the number of files.
+Every pair of hashes is compared. For images and videos the metric is hamming distance against `--threshold`; for audio recording match it is normalized fingerprint dissimilarity (0.0-1.0) against `--audio-threshold`. This is an O(n^2) operation over the number of files. Encoding-match audio skips this step and groups by hash equality directly.
 
-For each pair where the distance is at or below the `--threshold`, both files are recorded as potential duplicates of each other. This produces a bidirectional adjacency map.
+For each pair where the distance is at or below the threshold, both files are recorded as potential duplicates of each other. This produces a bidirectional adjacency map.
 
 With `--verbose`, the distance for every pair is printed to stderr.
 
@@ -57,7 +67,7 @@ With `--verbose`, the distance for every pair is printed to stderr.
 
 The adjacency map is converted into transitive groups using depth-first search. If A matches B and B matches C, then A, B, and C are placed in the same group -- even if A and C do not directly match.
 
-Within each group, files are sorted alphabetically. The first file is designated as the one to **keep**; the rest are marked for deletion.
+Within each group, files are sorted alphabetically. The first file is designated as the one to **keep**; the rest are marked for deletion. Recording-match audio groups are the exception: because they deliberately group files of unequal fidelity, the kept file is the highest-fidelity member -- lossless (flac, wav, aiff) over lossy, then higher bitrate, then alphabetical tiebreak.
 
 ## Step 6: Report Results
 
@@ -79,4 +89,4 @@ In dry-run mode, this step is skipped entirely and the exit code is set to `1` i
 
 ## Processing Order
 
-Images and videos are processed in separate passes. Image deduplication runs first, followed by video deduplication. Each pass produces its own set of duplicate groups. The groups are merged for JSON output but displayed separately in table mode.
+Images, videos, and audio are processed in separate passes, in that order. Each pass produces its own set of duplicate groups; groups never mix media kinds. The groups are merged for JSON output but displayed separately in table mode.
