@@ -123,6 +123,72 @@ fn only_images_skips_videos() {
         .stdout(predicate::str::contains("video").not());
 }
 
+fn create_wav(path: &std::path::Path, frequency: f64) {
+    let samples: Vec<i16> = (0..4410)
+        .map(|i| {
+            let t = i as f64 / 44100.0;
+            ((t * frequency * 2.0 * std::f64::consts::PI).sin() * 20000.0) as i16
+        })
+        .collect();
+    let data_len = (samples.len() * 2) as u32;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+    bytes.extend_from_slice(b"WAVE");
+    bytes.extend_from_slice(b"fmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&44100u32.to_le_bytes());
+    bytes.extend_from_slice(&(44100u32 * 2).to_le_bytes());
+    bytes.extend_from_slice(&2u16.to_le_bytes());
+    bytes.extend_from_slice(&16u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_len.to_le_bytes());
+    for sample in &samples {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn missing_ffmpeg_warns_for_video_and_audio_and_keeps_image_results() {
+    let dir = tempfile::tempdir().unwrap();
+    create_gradient_image(&dir.path().join("a.png"), true);
+    create_gradient_image(&dir.path().join("b.png"), true);
+    create_wav(&dir.path().join("x.wav"), 440.0);
+
+    cmd()
+        .arg(dir.path())
+        .arg("-n")
+        .env("PATH", "")
+        .assert()
+        .code(1)
+        .stderr(
+            predicate::str::contains("skipping video pass")
+                .and(predicate::str::contains("skipping audio pass")),
+        )
+        .stdout(predicate::str::contains("would delete"));
+}
+
+#[test]
+fn encoding_match_needs_no_ffmpeg() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.wav");
+    let b = dir.path().join("b.wav");
+    create_wav(&a, 440.0);
+    fs::copy(&a, &b).unwrap();
+
+    cmd()
+        .arg(dir.path())
+        .args(["--only", "audio", "--audio-match", "encoding", "-n"])
+        .env("PATH", "")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("skipping audio pass").not())
+        .stdout(predicate::str::contains("would delete"));
+}
+
 #[test]
 fn audio_threshold_with_encoding_match_errors() {
     let dir = tempfile::tempdir().unwrap();

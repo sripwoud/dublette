@@ -39,6 +39,10 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
 
     let dedup_report = dedupe::plan(&args.directories, &config, progress.as_ref())?;
 
+    for warning in &dedup_report.warnings {
+        eprintln!("Warning: {warning}");
+    }
+
     for skipped in &dedup_report.skipped {
         eprintln!(
             "Warning: skipping {}: {}",

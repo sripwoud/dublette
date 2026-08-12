@@ -125,6 +125,7 @@ mod tests {
             groups,
             empty_files: vec![],
             skipped: vec![],
+            warnings: vec![],
         }
     }
 
@@ -221,6 +222,7 @@ mod tests {
             }],
             empty_files: vec![PathBuf::from("empty.jpg")],
             skipped: vec![],
+            warnings: vec![],
         };
         let json = format_json(&report, true);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();

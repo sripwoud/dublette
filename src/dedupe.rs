@@ -49,6 +49,7 @@ pub struct DeduplicationReport {
     pub groups: Vec<DuplicateGroup>,
     pub empty_files: Vec<PathBuf>,
     pub skipped: Vec<SkippedFile>,
+    pub warnings: Vec<String>,
 }
 
 pub trait Progress: Sync {
@@ -129,6 +130,7 @@ pub fn plan(
 ) -> eyre::Result<DeduplicationReport> {
     let mut skipped: Vec<SkippedFile> = Vec::new();
     let mut groups: Vec<DuplicateGroup> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
 
     let empty_files = if config.include_empty {
         delete::find_empty_files(dirs)?
@@ -153,31 +155,35 @@ pub fn plan(
         ));
     }
 
-    if MediaKind::Video.pass_enabled(config.only)
-        && let Ok(ffmpeg) = hash::find_ffmpeg()
-    {
-        let exts: HashSet<&str> = scan::VIDEO_EXTENSIONS.iter().copied().collect();
-        let files = scan::collect_files(dirs, &exts)?;
-        let (hashed, video_skipped) = hash_in_parallel(&files, progress, "Hashing videos", |p| {
-            hash::extract_video_frame_hash(p, &ffmpeg)
-        });
-        skipped.extend(video_skipped);
-        groups.extend(compare_and_build_groups(
-            &hashed,
-            config.threshold,
-            |a, b| a.dist(b),
-            progress,
-            "video",
-            MediaKind::Video,
-        ));
+    if MediaKind::Video.pass_enabled(config.only) {
+        match hash::find_ffmpeg() {
+            Ok(ffmpeg) => {
+                let exts: HashSet<&str> = scan::VIDEO_EXTENSIONS.iter().copied().collect();
+                let files = scan::collect_files(dirs, &exts)?;
+                let (hashed, video_skipped) =
+                    hash_in_parallel(&files, progress, "Hashing videos", |p| {
+                        hash::extract_video_frame_hash(p, &ffmpeg)
+                    });
+                skipped.extend(video_skipped);
+                groups.extend(compare_and_build_groups(
+                    &hashed,
+                    config.threshold,
+                    |a, b| a.dist(b),
+                    progress,
+                    "video",
+                    MediaKind::Video,
+                ));
+            }
+            Err(_) => warnings.push("ffmpeg not found on PATH; skipping video pass".to_string()),
+        }
     }
 
     if MediaKind::Audio.pass_enabled(config.only) {
         let exts: HashSet<&str> = scan::AUDIO_EXTENSIONS.iter().copied().collect();
         let files = scan::collect_files(dirs, &exts)?;
         match config.audio_match {
-            audio::MatchStrategy::Recording => {
-                if let Ok(ffmpeg) = hash::find_ffmpeg() {
+            audio::MatchStrategy::Recording => match hash::find_ffmpeg() {
+                Ok(ffmpeg) => {
                     let (fingerprinted, audio_skipped) =
                         hash_in_parallel(&files, progress, "Fingerprinting audio", |p| {
                             audio::fingerprint(p, &ffmpeg)
@@ -198,7 +204,12 @@ pub fn plan(
                     }
                     groups.extend(recording_groups);
                 }
-            }
+                Err(_) => warnings.push(
+                    "ffmpeg not found on PATH; skipping audio pass (recording match decodes \
+                     via ffmpeg; --audio-match encoding works without it)"
+                        .to_string(),
+                ),
+            },
             audio::MatchStrategy::Encoding => {
                 let (hashed, audio_skipped) =
                     hash_in_parallel(&files, progress, "Hashing audio streams", |p| {
@@ -214,6 +225,7 @@ pub fn plan(
         groups,
         empty_files,
         skipped,
+        warnings,
     })
 }
 
