@@ -1,14 +1,14 @@
 # Dublette
 
-Dublette deduplicates images and videos using perceptual hashing. The codebase has one bounded context — the deduplication of media collections under one or more directories.
+Dublette deduplicates images, videos, and audio using perceptual hashing and acoustic fingerprints. The codebase has one bounded context — the deduplication of media collections under one or more directories.
 
 ## Language
 
 **Deduplication**:
-The pipeline that discovers media files in given directories, computes perceptual hashes, groups visually similar files, and removes all but one file per group.
+The pipeline that discovers media files in given directories, computes a per-kind fingerprint, groups the files within threshold of each other, and removes all but one file per group per the keep policy. One pass per media kind, in order: image, video, audio.
 
 **Media file**:
-A file whose extension matches the supported image set (jpg, jpeg, png, bmp, gif, tiff, webp) or video set (mp4, mov, avi, mkv, wmv, flv, webm, m4v, 3gp).
+A file whose extension matches the supported image set (jpg, jpeg, png, bmp, gif, tiff, webp), video set (mp4, mov, avi, mkv, wmv, flv, webm, m4v, 3gp), or audio set (mp3, flac, ogg, opus, m4a, aac, wav, wma, aiff).
 _Avoid_: file, photo, image (when ambiguous between media kind and a literal image file).
 
 **Media kind**:
@@ -23,7 +23,7 @@ A fingerprint computed from a media file's decoded audio content (Chromaprint-cl
 _Avoid_: audio hash, perceptual hash (reserved for visual content).
 
 **Match strategy** (audio only):
-How audio files are compared for duplication. **Recording match** (default): acoustic fingerprints within threshold — same recording regardless of encoding. **Encoding match** (strict): a content hash of the encoded audio stream with tag/metadata regions excluded — "same file, retagged" matches; a re-encode never does. Motivated by deletion safety (never group a lossless file with a lossy re-encode by accident) and by cost (no decoding, I/O-bound). Encoding match finds a strict subset of what recording match finds.
+How audio files are compared for duplication. **Recording match** (default): acoustic fingerprints within threshold — same recording regardless of encoding. **Encoding match** (strict): a 64-bit digest of the file's bytes with tag/metadata regions excluded and container structure included — "same file, retagged" matches; a re-encode or a remux never does. Motivated by deletion safety (never group a lossless file with a lossy re-encode by accident) and by cost (no decoding, I/O-bound). Encoding match finds a subset of what recording match finds among files both can process; the two do not nest in general — audio under ~3s or undecodable by ffmpeg is skipped by recording match yet still grouped by encoding match.
 
 **Hamming distance**:
 The number of differing bits between two perceptual hashes. The metric for "how visually different are these two files".
@@ -44,13 +44,13 @@ How the kept file of a duplicate group is chosen. Image, video, and encoding-mat
 A zero-byte media file. Found independently of the deduplication pipeline; deleted only when explicitly requested by the caller.
 
 **Skipped file**:
-A media file that could not be hashed (corrupt image, ffmpeg failure, unreadable). Recorded as data in the deduplication output, not silently swallowed.
+A media file that could not be hashed (corrupt image, ffmpeg failure, audio too short to fingerprint, container no tag parser understands, unreadable). Recorded as data in the deduplication output, not silently swallowed.
 
 ## Relationships
 
-- A **Media file** has at most one **Perceptual hash** per pipeline run; un-hashable files become **Skipped files**.
+- A **Media file** has at most one fingerprint per pipeline run — a **Perceptual hash** for image and video, an **Acoustic fingerprint** or an encoding digest for audio, per the **Match strategy**; un-hashable files become **Skipped files**.
 - A **Duplicate group** contains two or more **Media files** of the same **Media kind** (image, video, or audio; never mixed across kinds). Audio streams embedded in video files are never fingerprinted — a music video and its audio rip are not duplicates of each other.
-- The **Hamming distance** between two **Perceptual hashes** is the deciding metric for membership in a **Duplicate group**.
+- The **Hamming distance** between two **Perceptual hashes** decides membership in an image or video **Duplicate group**. Audio membership is decided by the active **Match strategy**: normalized fingerprint dissimilarity within **Threshold** under recording match, digest equality under encoding match.
 - **Empty files** and **Skipped files** are not part of any **Duplicate group** but appear in the **Deduplication** output.
 
 ## Example dialogue
@@ -60,5 +60,5 @@ A media file that could not be hashed (corrupt image, ffmpeg failure, unreadable
 
 ## Flagged ambiguities
 
-- "duplicate" was used loosely to mean both byte-identical and visually-similar — resolved: in this project, **Duplicate** always means within-**Threshold** by **Hamming distance** on the **Perceptual hash**, never byte-equality. For audio, "duplicate" is defined by the active **Match strategy**; even **Encoding match** is exactness on audio content, not file byte-equality (tags may differ).
+- "duplicate" was used loosely to mean both byte-identical and visually-similar — resolved: in this project, **Duplicate** always means within-**Threshold** by **Hamming distance** on the **Perceptual hash**, never byte-equality. For audio, "duplicate" is defined by the active **Match strategy**; even **Encoding match** is exactness on the tag-stripped file, not file byte-equality (tags may differ).
 - The mechanism of **Encoding match** was debated (stream bytes minus tags vs decoded-PCM hash) — resolved: stream bytes minus tags. Decoded-PCM would require full decode, making "strict" slower than **Recording match** and killing the cost motive; lossless↔lossless transcodes (FLAC↔WAV) are intentionally NOT encoding matches — they are recording matches.
