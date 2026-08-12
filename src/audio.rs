@@ -2,7 +2,7 @@ use std::fmt;
 use std::fs::OpenOptions;
 use std::hash::{DefaultHasher, Hasher};
 use std::io::{Read, Seek};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
@@ -111,6 +111,41 @@ pub fn dissimilarity(a: &Fingerprint, b: &Fingerprint) -> f64 {
     let matched_items: usize = segments.iter().map(|s| s.items_count).sum();
     let unmatched = total.saturating_sub(matched_items) as f64;
     (matched_error + unmatched) / total as f64
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct AudioQuality {
+    pub lossless: bool,
+    pub bitrate: u32,
+}
+
+pub fn quality(path: &Path) -> AudioQuality {
+    let Ok(tagged) = lofty::read_from_path(path) else {
+        return AudioQuality {
+            lossless: false,
+            bitrate: 0,
+        };
+    };
+    AudioQuality {
+        lossless: matches!(
+            tagged.file_type(),
+            lofty::file::FileType::Flac | lofty::file::FileType::Wav | lofty::file::FileType::Aiff
+        ),
+        bitrate: tagged.properties().audio_bitrate().unwrap_or(0),
+    }
+}
+
+pub fn quality_keep(mut members: Vec<PathBuf>) -> (PathBuf, Vec<PathBuf>) {
+    members.sort();
+    let qualities: Vec<AudioQuality> = members.iter().map(|p| quality(p)).collect();
+    let mut best = 0;
+    for (i, q) in qualities.iter().enumerate() {
+        if *q > qualities[best] {
+            best = i;
+        }
+    }
+    let keep = members.remove(best);
+    (keep, members)
 }
 
 pub fn encoding_hash(path: &Path) -> eyre::Result<u64> {
@@ -251,6 +286,85 @@ mod tests {
             d > DEFAULT_THRESHOLD,
             "different recordings should exceed default threshold (dissimilarity={d})"
         );
+    }
+
+    #[test]
+    fn lossless_outranks_any_lossy_bitrate() {
+        let flac = AudioQuality {
+            lossless: true,
+            bitrate: 400,
+        };
+        let mp3 = AudioQuality {
+            lossless: false,
+            bitrate: 320,
+        };
+        assert!(flac > mp3);
+    }
+
+    #[test]
+    fn higher_bitrate_wins_within_same_fidelity_class() {
+        let high = AudioQuality {
+            lossless: false,
+            bitrate: 320,
+        };
+        let low = AudioQuality {
+            lossless: false,
+            bitrate: 128,
+        };
+        assert!(high > low);
+    }
+
+    #[test]
+    fn quality_of_wav_is_lossless() {
+        let dir = tempfile::tempdir().unwrap();
+        let wav = dir.path().join("a.wav");
+        write_wav(&wav, &tone(440.0, 4410));
+
+        assert!(quality(&wav).lossless);
+    }
+
+    #[test]
+    fn quality_of_unparseable_file_is_bottom_rank() {
+        let dir = tempfile::tempdir().unwrap();
+        let bad = dir.path().join("bad.mp3");
+        fs::write(&bad, b"not-audio-at-all").unwrap();
+
+        assert_eq!(
+            quality(&bad),
+            AudioQuality {
+                lossless: false,
+                bitrate: 0
+            }
+        );
+    }
+
+    #[test]
+    fn quality_keep_prefers_lossless_over_alphabetical_order() {
+        let Some(ffmpeg) = find_ffmpeg() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let mp3 = dir.path().join("a.mp3");
+        let flac = dir.path().join("z.flac");
+        synth_recording(&ffmpeg, &mp3, MELODY_A);
+        synth_recording(&ffmpeg, &flac, MELODY_A);
+
+        let (keep, duplicates) = quality_keep(vec![mp3.clone(), flac.clone()]);
+        assert_eq!(keep, flac);
+        assert_eq!(duplicates, vec![mp3]);
+    }
+
+    #[test]
+    fn quality_keep_falls_back_to_alphabetical_on_equal_quality() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.wav");
+        let z = dir.path().join("z.wav");
+        write_wav(&a, &tone(440.0, 4410));
+        fs::copy(&a, &z).unwrap();
+
+        let (keep, duplicates) = quality_keep(vec![z.clone(), a.clone()]);
+        assert_eq!(keep, a);
+        assert_eq!(duplicates, vec![z]);
     }
 
     #[test]

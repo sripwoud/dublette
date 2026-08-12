@@ -183,14 +183,20 @@ pub fn plan(
                             audio::fingerprint(p, &ffmpeg)
                         });
                     skipped.extend(audio_skipped);
-                    groups.extend(compare_and_build_groups(
+                    let mut recording_groups = compare_and_build_groups(
                         &fingerprinted,
                         config.audio_threshold,
                         audio::dissimilarity,
                         progress,
                         "audio file",
                         MediaKind::Audio,
-                    ));
+                    );
+                    for group in &mut recording_groups {
+                        let mut members = vec![std::mem::take(&mut group.keep)];
+                        members.append(&mut group.duplicates);
+                        (group.keep, group.duplicates) = audio::quality_keep(members);
+                    }
+                    groups.extend(recording_groups);
                 }
             }
             audio::MatchStrategy::Encoding => {
@@ -682,10 +688,11 @@ mod tests {
 
         assert_eq!(report.groups.len(), 1);
         assert_eq!(report.groups[0].kind, MediaKind::Audio);
-        let mut members = vec![report.groups[0].keep.clone()];
-        members.extend(report.groups[0].duplicates.iter().cloned());
-        members.sort();
-        assert_eq!(members, vec![mp3, flac]);
+        assert_eq!(
+            report.groups[0].keep, flac,
+            "recording match must keep the lossless file over the alphabetically first mp3"
+        );
+        assert_eq!(report.groups[0].duplicates, vec![mp3]);
     }
 
     #[test]
