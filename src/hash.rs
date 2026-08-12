@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use img_hash::{HashAlg, HasherConfig, ImageHash};
+use image_hasher::{HashAlg, HasherConfig, ImageHash};
 
-fn hasher() -> img_hash::Hasher {
+fn hasher() -> image_hasher::Hasher {
     HasherConfig::new()
         .hash_alg(HashAlg::DoubleGradient)
         .hash_size(8, 8)
