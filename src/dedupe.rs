@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 
-use crate::{delete, hash, scan};
+use crate::{audio, delete, hash, scan};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MediaKind {
@@ -170,11 +170,46 @@ pub fn plan(
         ));
     }
 
+    if MediaKind::Audio.pass_enabled(config.only) {
+        let exts: HashSet<&str> = scan::AUDIO_EXTENSIONS.iter().copied().collect();
+        let files = scan::collect_files(dirs, &exts)?;
+        let (hashed, audio_skipped) =
+            hash_in_parallel(&files, progress, "Hashing audio streams", |p| {
+                audio::encoding_hash(p)
+            });
+        skipped.extend(audio_skipped);
+        groups.extend(encoding_match_groups(&hashed));
+    }
+
     Ok(DeduplicationReport {
         groups,
         empty_files,
         skipped,
     })
+}
+
+fn encoding_match_groups(hashed: &[HashedFile<u64>]) -> Vec<DuplicateGroup> {
+    let mut buckets: std::collections::HashMap<u64, Vec<PathBuf>> =
+        std::collections::HashMap::new();
+    for h in hashed {
+        buckets.entry(h.hash).or_default().push(h.path.clone());
+    }
+
+    let mut groups: Vec<DuplicateGroup> = buckets
+        .into_values()
+        .filter(|members| members.len() >= 2)
+        .map(|mut members| {
+            members.sort();
+            let keep = members.remove(0);
+            DuplicateGroup {
+                kind: MediaKind::Audio,
+                keep,
+                duplicates: members,
+            }
+        })
+        .collect();
+    groups.sort_by(|a, b| a.keep.cmp(&b.keep));
+    groups
 }
 
 fn compare_and_build_groups<H, D>(
@@ -521,6 +556,68 @@ mod tests {
             report.skipped.is_empty(),
             "image and video files should not have been processed"
         );
+    }
+
+    fn write_wav(path: &std::path::Path, frequency: f64) {
+        let samples: Vec<i16> = (0..4410)
+            .map(|i| {
+                let t = i as f64 / 44100.0;
+                ((t * frequency * 2.0 * std::f64::consts::PI).sin() * 20000.0) as i16
+            })
+            .collect();
+        let data_len = (samples.len() * 2) as u32;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+        bytes.extend_from_slice(b"WAVE");
+        bytes.extend_from_slice(b"fmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&44100u32.to_le_bytes());
+        bytes.extend_from_slice(&(44100u32 * 2).to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_len.to_le_bytes());
+        for sample in &samples {
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    fn retag(path: &std::path::Path, title: &str) {
+        use lofty::config::WriteOptions;
+        use lofty::prelude::*;
+        use lofty::tag::{Tag, TagType};
+
+        let mut tag = Tag::new(TagType::Id3v2);
+        tag.set_title(title.to_string());
+        tag.save_to_path(path, WriteOptions::default()).unwrap();
+    }
+
+    #[test]
+    fn plan_encoding_match_groups_retagged_audio_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.wav");
+        let b = dir.path().join("b.wav");
+        let c = dir.path().join("c.wav");
+        write_wav(&a, 440.0);
+        std::fs::copy(&a, &b).unwrap();
+        retag(&b, "same recording, new tags");
+        write_wav(&c, 880.0);
+
+        let config = Config {
+            threshold: 0,
+            only: Some(MediaKind::Audio),
+            include_empty: false,
+        };
+        let report = plan(&dirs(&dir), &config, &NoopProgress).unwrap();
+
+        assert_eq!(report.groups.len(), 1);
+        assert_eq!(report.groups[0].kind, MediaKind::Audio);
+        assert_eq!(report.groups[0].keep, a);
+        assert_eq!(report.groups[0].duplicates, vec![b]);
     }
 
     #[test]
