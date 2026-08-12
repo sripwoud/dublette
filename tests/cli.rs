@@ -370,6 +370,79 @@ fn multiple_directories_no_cross_dir_duplicates() {
 }
 
 #[test]
+fn keep_in_nonexistent_directory_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+
+    cmd()
+        .arg(dir.path())
+        .args(["--keep-in", "/nonexistent/keep/dir"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("--keep-in"))
+        .stderr(predicate::str::contains("does not exist"));
+}
+
+#[test]
+fn keep_in_file_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("a.png");
+    create_gradient_image(&file, true);
+
+    cmd()
+        .arg(dir.path())
+        .arg("--keep-in")
+        .arg(&file)
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("not a directory"));
+}
+
+#[test]
+fn keep_in_keeps_library_copy_and_deletes_inbox_copy() {
+    let root = tempfile::tempdir().unwrap();
+    let inbox = root.path().join("inbox");
+    let library = root.path().join("library");
+    fs::create_dir(&inbox).unwrap();
+    fs::create_dir(&library).unwrap();
+    create_gradient_image(&inbox.join("a.png"), true);
+    create_gradient_image(&library.join("z.png"), true);
+
+    cmd()
+        .arg(&inbox)
+        .arg(&library)
+        .arg("--keep-in")
+        .arg(&library)
+        .arg("-y")
+        .assert()
+        .success();
+
+    assert!(!inbox.join("a.png").exists());
+    assert!(library.join("z.png").exists());
+}
+
+#[test]
+fn keep_in_relative_path_with_trailing_slash_matches() {
+    let root = tempfile::tempdir().unwrap();
+    let inbox = root.path().join("inbox");
+    let library = root.path().join("library");
+    fs::create_dir(&inbox).unwrap();
+    fs::create_dir(&library).unwrap();
+    create_gradient_image(&inbox.join("a.png"), true);
+    create_gradient_image(&library.join("z.png"), true);
+
+    cmd()
+        .current_dir(root.path())
+        .args(["inbox", "library", "--keep-in", "library/", "-y"])
+        .assert()
+        .success();
+
+    assert!(!inbox.join("a.png").exists());
+    assert!(library.join("z.png").exists());
+}
+
+#[test]
 fn verbose_shows_distances() {
     let dir = tempfile::tempdir().unwrap();
     create_gradient_image(&dir.path().join("a.png"), true);

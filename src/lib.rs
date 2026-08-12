@@ -30,6 +30,7 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
             None => None,
         },
         include_empty: args.delete_empty,
+        keep_in: args.keep_in.clone(),
     };
 
     let progress: Box<dyn dedupe::Progress> = if args.quiet {

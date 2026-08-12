@@ -18,7 +18,7 @@ fn main() -> ExitCode {
     })
     .ok();
 
-    let args = Args::parse();
+    let mut args = Args::parse();
 
     for dir in &args.directories {
         if !dir.exists() {
@@ -29,6 +29,23 @@ fn main() -> ExitCode {
             eprintln!("error: '{}' is not a directory", dir.display());
             return ExitCode::from(2);
         }
+    }
+
+    for dir in &mut args.keep_in {
+        if !dir.is_dir() {
+            eprintln!(
+                "error: --keep-in directory '{}' does not exist or is not a directory",
+                dir.display()
+            );
+            return ExitCode::from(2);
+        }
+        *dir = match dir.canonicalize() {
+            Ok(canonical) => canonical,
+            Err(e) => {
+                eprintln!("error: --keep-in '{}': {e}", dir.display());
+                return ExitCode::from(2);
+            }
+        };
     }
 
     match dublette::run(&args) {
