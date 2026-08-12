@@ -44,7 +44,11 @@ How the kept file of a duplicate group is chosen. Image, video, and encoding-mat
 A zero-byte media file. Found independently of the deduplication pipeline; deleted only when explicitly requested by the caller.
 
 **Skipped file**:
-A media file that could not be hashed (corrupt image, ffmpeg failure, audio too short to fingerprint, container no tag parser understands, unreadable). Recorded as data in the deduplication output, not silently swallowed.
+A media file that could not be hashed. Recorded as data in the deduplication output, not silently swallowed: it carries a **skip reason** and a human-readable detail, appears in `--json` under `skipped`, and prints to stderr.
+
+**Skip reason**:
+Why a **Skipped file** could not be hashed, as a closed variant set partitioned by what the caller should do about it — `decode_failed` (content is broken: corrupt image, ffmpeg decode failure, no usable video frame; investigate the file), `too_short` (audio under ~3s, no acoustic fingerprint possible), `unsupported_container` (no tag parser understands it — expected for wma under encoding match), `unreadable` (could not read the file at all). Decided at the error site by the hashing function, never recovered by matching on a formatted message. The tag strings are a public contract of the `--json` output; the detail string is not.
+_Avoid_: error, failure (both suggest the run failed — a skipped file is a normal outcome).
 
 ## Relationships
 

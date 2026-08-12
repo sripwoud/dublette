@@ -11,6 +11,8 @@ use lofty::config::WriteOptions;
 use lofty::prelude::*;
 use rusty_chromaprint::{Configuration, Fingerprinter, match_fingerprints};
 
+use crate::skip::{SkipError, SkipReason};
+
 pub const DEFAULT_THRESHOLD: f64 = 0.1;
 
 const PCM_SAMPLE_RATE: u32 = 11025;
@@ -35,7 +37,7 @@ fn chromaprint_config() -> &'static Configuration {
     CONFIG.get_or_init(Configuration::preset_test2)
 }
 
-pub fn fingerprint(path: &Path, ffmpeg: &Path) -> eyre::Result<Fingerprint> {
+pub fn fingerprint(path: &Path, ffmpeg: &Path) -> Result<Fingerprint, SkipError> {
     let mut child = Command::new(ffmpeg)
         .args(["-v", "error", "-i"])
         .arg(path)
@@ -67,9 +69,9 @@ pub fn fingerprint(path: &Path, ffmpeg: &Path) -> eyre::Result<Fingerprint> {
         .read_to_end(&mut pcm)?;
     let status = child.wait()?;
     if !status.success() {
-        return Err(eyre::eyre!(
-            "ffmpeg could not decode audio from {}",
-            path.display()
+        return Err(SkipError::new(
+            SkipReason::DecodeFailed,
+            format!("ffmpeg could not decode audio from {}", path.display()),
         ));
     }
 
@@ -79,17 +81,20 @@ pub fn fingerprint(path: &Path, ffmpeg: &Path) -> eyre::Result<Fingerprint> {
         .collect();
 
     let mut printer = Fingerprinter::new(chromaprint_config());
-    printer
-        .start(PCM_SAMPLE_RATE, 1)
-        .map_err(|e| eyre::eyre!("fingerprinter rejected PCM stream: {e}"))?;
+    printer.start(PCM_SAMPLE_RATE, 1).map_err(|e| {
+        SkipError::new(
+            SkipReason::DecodeFailed,
+            format!("fingerprinter rejected PCM stream: {e}"),
+        )
+    })?;
     printer.consume(&samples);
     printer.finish();
 
     let items = printer.fingerprint().to_vec();
     if items.is_empty() {
-        return Err(eyre::eyre!(
-            "audio in {} is too short to fingerprint",
-            path.display()
+        return Err(SkipError::new(
+            SkipReason::TooShort,
+            format!("audio in {} is too short to fingerprint", path.display()),
         ));
     }
     Ok(Fingerprint(items))
@@ -148,18 +153,27 @@ pub fn quality_keep(mut members: Vec<PathBuf>) -> (PathBuf, Vec<PathBuf>) {
     (keep, members)
 }
 
-pub fn encoding_hash(path: &Path) -> eyre::Result<u64> {
+pub fn encoding_hash(path: &Path) -> Result<u64, SkipError> {
     let workdir = tempfile::tempdir()?;
     let stripped = workdir.path().join("stripped");
     std::fs::copy(path, &stripped)?;
 
     let mut file = OpenOptions::new().read(true).write(true).open(&stripped)?;
-    let tagged = lofty::read_from(&mut file)
-        .map_err(|e| eyre::eyre!("failed to parse audio container {}: {e}", path.display()))?;
+    let tagged = lofty::read_from(&mut file).map_err(|e| {
+        SkipError::new(
+            SkipReason::UnsupportedContainer,
+            format!("failed to parse audio container {}: {e}", path.display()),
+        )
+    })?;
     for tag in tagged.tags() {
         file.rewind()?;
         tag.remove_from(&mut file, WriteOptions::default())
-            .map_err(|e| eyre::eyre!("failed to exclude tag region in {}: {e}", path.display()))?;
+            .map_err(|e| {
+                SkipError::new(
+                    SkipReason::Unreadable,
+                    format!("failed to exclude tag region in {}: {e}", path.display()),
+                )
+            })?;
     }
 
     file.rewind()?;

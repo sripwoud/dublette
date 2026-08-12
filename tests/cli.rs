@@ -185,6 +185,30 @@ fn missing_ffmpeg_warns_for_video_and_audio_and_keeps_image_results() {
 }
 
 #[test]
+fn missing_ffmpeg_pass_warnings_appear_in_json() {
+    let dir = tempfile::tempdir().unwrap();
+    create_gradient_image(&dir.path().join("a.png"), true);
+    create_wav(&dir.path().join("x.wav"), 440.0);
+
+    let output = cmd()
+        .arg(dir.path())
+        .args(["-n", "--json"])
+        .env("PATH", "")
+        .output()
+        .unwrap();
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let warnings: Vec<&str> = json["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w.as_str().unwrap())
+        .collect();
+    assert!(warnings.iter().any(|w| w.contains("skipping video pass")));
+    assert!(warnings.iter().any(|w| w.contains("skipping audio pass")));
+}
+
+#[test]
 fn encoding_match_needs_no_ffmpeg() {
     let dir = tempfile::tempdir().unwrap();
     let a = dir.path().join("a.wav");
@@ -244,6 +268,42 @@ fn json_output_valid() {
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(json["dry_run"].as_bool().unwrap());
     assert!(!json["groups"].as_array().unwrap().is_empty());
+    assert!(json["skipped"].as_array().unwrap().is_empty());
+    assert_eq!(json["total_skipped"], 0);
+    assert!(json["warnings"].is_array());
+}
+
+#[test]
+fn json_output_reports_skipped_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let corrupt = dir.path().join("corrupt.jpg");
+    fs::write(&corrupt, b"not-an-image-payload").unwrap();
+
+    let output = cmd()
+        .arg(dir.path())
+        .args(["-n", "--json", "--only", "images"])
+        .output()
+        .unwrap();
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["total_skipped"], 1);
+    assert_eq!(json["skipped"][0]["reason"], "decode_failed");
+    assert_eq!(
+        json["skipped"][0]["path"],
+        corrupt.display().to_string().as_str()
+    );
+    assert!(
+        json["skipped"][0]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("failed to open")
+    );
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains(&format!("Warning: skipping {}: ", corrupt.display())),
+        "stderr warning shape must be unchanged: {stderr}"
+    );
 }
 
 #[test]

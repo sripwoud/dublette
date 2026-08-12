@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 
+use crate::skip::{SkipError, SkippedFile};
 use crate::{audio, delete, hash, scan};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,11 +28,6 @@ pub struct Config {
     pub audio_threshold: f64,
     pub only: Option<MediaKind>,
     pub include_empty: bool,
-}
-
-pub struct SkippedFile {
-    pub path: PathBuf,
-    pub reason: String,
 }
 
 pub struct HashedFile<H> {
@@ -307,7 +303,7 @@ fn hash_in_parallel<H, F>(
 ) -> (Vec<HashedFile<H>>, Vec<SkippedFile>)
 where
     H: fmt::Debug + Send,
-    F: Fn(&PathBuf) -> eyre::Result<H> + Sync,
+    F: Fn(&PathBuf) -> Result<H, SkipError> + Sync,
 {
     progress.phase_start(label, files.len() as u64);
     let results: Vec<Result<HashedFile<H>, SkippedFile>> = files
@@ -323,10 +319,7 @@ where
                         hash: h,
                     })
                 }
-                Err(e) => Err(SkippedFile {
-                    path: f.clone(),
-                    reason: format!("{e}"),
-                }),
+                Err(e) => Err(SkippedFile::new(f.clone(), e)),
             }
         })
         .collect();
@@ -346,6 +339,8 @@ where
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
+
+    use crate::skip::SkipReason;
 
     use super::*;
 
@@ -797,10 +792,50 @@ mod tests {
             1,
             "expected exactly one skipped entry for bad.jpg"
         );
+        assert_eq!(skipped[0].reason, SkipReason::DecodeFailed);
         assert!(
-            !skipped[0].reason.is_empty(),
-            "skipped reason should describe the failure"
+            !skipped[0].detail.is_empty(),
+            "skipped detail should describe the failure"
         );
+    }
+
+    #[test]
+    fn plan_short_audio_recorded_as_too_short() {
+        if hash::find_ffmpeg().is_err() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let short = dir.path().join("short.wav");
+        write_wav(&short, 440.0);
+
+        let config = Config {
+            only: Some(MediaKind::Audio),
+            ..default_config()
+        };
+        let report = plan(&dirs(&dir), &config, &NoopProgress).unwrap();
+
+        let skipped: Vec<&SkippedFile> =
+            report.skipped.iter().filter(|s| s.path == short).collect();
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].reason, SkipReason::TooShort);
+    }
+
+    #[test]
+    fn plan_encoding_match_unparseable_container_recorded_as_unsupported() {
+        let dir = tempfile::tempdir().unwrap();
+        let bad = dir.path().join("bad.mp3");
+        std::fs::write(&bad, b"not-audio-at-all").unwrap();
+
+        let config = Config {
+            audio_match: audio::MatchStrategy::Encoding,
+            only: Some(MediaKind::Audio),
+            ..default_config()
+        };
+        let report = plan(&dirs(&dir), &config, &NoopProgress).unwrap();
+
+        let skipped: Vec<&SkippedFile> = report.skipped.iter().filter(|s| s.path == bad).collect();
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].reason, SkipReason::UnsupportedContainer);
     }
 
     #[test]
