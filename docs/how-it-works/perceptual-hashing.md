@@ -6,6 +6,8 @@ Traditional file comparison (checksums like MD5 or SHA-256) produces completely 
 
 Perceptual hashing solves this by generating hashes based on the visual content of an image, not its raw bytes.
 
+This page covers visual content only -- images and the single video frame extracted from each video. Audio files are matched by [Acoustic Fingerprinting](acoustic-fingerprinting.md) instead.
+
 ## What Is a Perceptual Hash?
 
 A perceptual hash reduces an image to a compact fingerprint that captures its visual structure. Two images that look similar produce similar hashes, even if they differ in:

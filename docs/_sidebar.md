@@ -8,6 +8,7 @@
 
 - How It Works
   - [Perceptual Hashing](how-it-works/perceptual-hashing.md)
+  - [Acoustic Fingerprinting](how-it-works/acoustic-fingerprinting.md)
   - [Deduplication Process](how-it-works/deduplication-process.md)
 
 - [Examples](examples.md)

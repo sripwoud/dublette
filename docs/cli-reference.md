@@ -69,7 +69,7 @@ dublette ~/Media --only audio
 
 ### `--audio-match`
 
-Selects how audio files are compared.
+Selects how audio files are compared. Both strategies are explained in [Acoustic Fingerprinting](how-it-works/acoustic-fingerprinting.md).
 
 - `recording` (default): computes an acoustic fingerprint from the decoded audio (up to the first 120 seconds, via ffmpeg) and groups files whose fingerprint dissimilarity is within `--audio-threshold`. The same recording matches across formats and bitrates -- an mp3 rip of a flac is a duplicate.
 - `encoding`: hashes the encoded audio stream with tag regions excluded. A retagged copy matches; a re-encode never does. Exact, takes no threshold, and needs no ffmpeg.
@@ -82,7 +82,7 @@ dublette ~/Music --audio-match encoding -n
 
 ### `--audio-threshold`
 
-Maximum normalized dissimilarity (0.0-1.0) between two acoustic fingerprints for the files to be considered the same recording. Applies to recording match only; combining it with `--audio-match encoding` is an error. The default of `0.1` comfortably matches the same recording across codecs while rejecting different recordings.
+Maximum normalized dissimilarity (0.0-1.0) between two acoustic fingerprints for the files to be considered the same recording. Applies to recording match only; combining it with `--audio-match encoding` is an error. The default of `0.1` comfortably matches the same recording across codecs while rejecting different recordings. See [Acoustic Fingerprinting](how-it-works/acoustic-fingerprinting.md) for how dissimilarity is computed and a per-value tuning table.
 
 ```bash
 dublette ~/Music --audio-threshold 0.05 -n
