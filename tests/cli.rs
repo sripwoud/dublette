@@ -36,7 +36,18 @@ fn help_output() {
         .success()
         .stdout(predicate::str::contains(
             "Deduplicate images, videos, and audio",
-        ));
+        ))
+        .stdout(predicate::str::contains("--version"));
+}
+
+#[test]
+fn version_output() {
+    let expected = format!("dublette {}", env!("CARGO_PKG_VERSION"));
+    cmd()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(expected));
 }
 
 #[test]

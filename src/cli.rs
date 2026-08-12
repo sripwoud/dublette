@@ -14,6 +14,7 @@ pub enum MediaFilter {
 #[derive(Parser)]
 #[command(
     name = "dublette",
+    version,
     about = "Deduplicate images, videos, and audio using perceptual hashing and acoustic fingerprints"
 )]
 pub struct Args {
@@ -182,5 +183,22 @@ mod tests {
     fn missing_directory_fails() {
         let result = Args::try_parse_from(&["dublette"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn version_long_flag() {
+        let err = Args::try_parse_from(["dublette", "--version"])
+            .map(|_| ())
+            .unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
+        assert!(err.to_string().contains(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn version_short_flag() {
+        let err = Args::try_parse_from(["dublette", "-V"])
+            .map(|_| ())
+            .unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
     }
 }
