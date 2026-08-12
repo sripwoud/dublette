@@ -20,6 +20,7 @@ fn kind_label(kind: MediaKind) -> &'static str {
     match kind {
         MediaKind::Image => "image",
         MediaKind::Video => "video",
+        MediaKind::Audio => "audio",
     }
 }
 
@@ -189,6 +190,17 @@ mod tests {
         assert!(output.contains("image"));
         assert!(output.contains("video"));
         assert!(output.contains("Kind"));
+    }
+
+    #[test]
+    fn table_renders_audio_kind() {
+        let report = make_report(vec![DuplicateGroup {
+            kind: MediaKind::Audio,
+            keep: PathBuf::from("a.mp3"),
+            duplicates: vec![PathBuf::from("b.mp3")],
+        }]);
+        let output = format_table(&report, false);
+        assert!(output.contains("audio"));
     }
 
     #[test]

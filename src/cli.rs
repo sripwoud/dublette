@@ -6,6 +6,7 @@ use clap::{Parser, ValueEnum};
 pub enum MediaFilter {
     Images,
     Videos,
+    Audio,
 }
 
 #[derive(Parser)]
@@ -28,7 +29,7 @@ pub struct Args {
     #[arg(short = 'n', long, help = "List duplicates without deleting")]
     pub dry_run: bool,
 
-    #[arg(long, value_enum, help = "Process only images or only videos")]
+    #[arg(long, value_enum, help = "Process only images, videos, or audio")]
     pub only: Option<MediaFilter>,
 
     #[arg(long, help = "Delete 0-byte media files")]
@@ -118,6 +119,12 @@ mod tests {
     fn only_videos() {
         let args = parse(&["dublette", "/tmp", "--only", "videos"]);
         assert!(matches!(args.only, Some(MediaFilter::Videos)));
+    }
+
+    #[test]
+    fn only_audio() {
+        let args = parse(&["dublette", "/tmp", "--only", "audio"]);
+        assert!(matches!(args.only, Some(MediaFilter::Audio)));
     }
 
     #[test]

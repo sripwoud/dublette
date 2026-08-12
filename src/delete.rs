@@ -78,6 +78,17 @@ mod tests {
     }
 
     #[test]
+    fn find_empty_audio_files() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("empty.mp3"), &[]).unwrap();
+        fs::write(dir.path().join("valid.mp3"), &[0xFF]).unwrap();
+
+        let empty = find_empty_files(&[dir.path().to_path_buf()]).unwrap();
+        assert_eq!(empty.len(), 1);
+        assert!(empty[0].file_name().unwrap().to_str().unwrap() == "empty.mp3");
+    }
+
+    #[test]
     fn delete_files_removes_them() {
         let dir = tempfile::tempdir().unwrap();
         let a = dir.path().join("a.jpg");

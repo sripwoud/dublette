@@ -16,6 +16,7 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
         only: match &args.only {
             Some(MediaFilter::Images) => Some(MediaKind::Image),
             Some(MediaFilter::Videos) => Some(MediaKind::Video),
+            Some(MediaFilter::Audio) => Some(MediaKind::Audio),
             None => None,
         },
         include_empty: args.delete_empty,

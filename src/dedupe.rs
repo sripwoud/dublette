@@ -13,6 +13,13 @@ use crate::{delete, hash, scan};
 pub enum MediaKind {
     Image,
     Video,
+    Audio,
+}
+
+impl MediaKind {
+    fn pass_enabled(self, only: Option<MediaKind>) -> bool {
+        only.is_none_or(|kind| kind == self)
+    }
 }
 
 pub struct Config {
@@ -128,7 +135,7 @@ pub fn plan(
         Vec::new()
     };
 
-    if !matches!(config.only, Some(MediaKind::Video)) {
+    if MediaKind::Image.pass_enabled(config.only) {
         let exts: HashSet<&str> = scan::IMAGE_EXTENSIONS.iter().copied().collect();
         let files = scan::collect_files(dirs, &exts)?;
         let (hashed, image_skipped) = hash_in_parallel(&files, progress, "Hashing images", |p| {
@@ -144,7 +151,7 @@ pub fn plan(
         ));
     }
 
-    if !matches!(config.only, Some(MediaKind::Image))
+    if MediaKind::Video.pass_enabled(config.only)
         && let Ok(ffmpeg) = hash::find_ffmpeg()
     {
         let exts: HashSet<&str> = scan::VIDEO_EXTENSIONS.iter().copied().collect();
@@ -481,6 +488,32 @@ mod tests {
                 .iter()
                 .all(|s| s.path.extension().and_then(|e| e.to_str()) != Some("png")),
             "image files should not have been processed"
+        );
+    }
+
+    #[test]
+    fn plan_only_audio_skips_images_and_videos() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.png");
+        let b = dir.path().join("b.png");
+        write_gradient(&a);
+        write_gradient(&b);
+        std::fs::write(dir.path().join("garbage.mp4"), b"not-a-video").unwrap();
+
+        let config = Config {
+            threshold: 0,
+            only: Some(MediaKind::Audio),
+            include_empty: false,
+        };
+        let report = plan(&dirs(&dir), &config, &NoopProgress).unwrap();
+
+        assert!(
+            report.groups.is_empty(),
+            "no image or video groups expected"
+        );
+        assert!(
+            report.skipped.is_empty(),
+            "image and video files should not have been processed"
         );
     }
 
