@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/sripwoud/dublette/compare/v0.4.0...v0.5.0) - 2026-08-12
+
+### Added
+
+- *(cli)* add --keep-in to pin the surviving copy to a directory ([#45](https://github.com/sripwoud/dublette/pull/45))
+- *(json)* report skipped files in JSON output ([#46](https://github.com/sripwoud/dublette/pull/46))
+- *(cli)* add --version flag ([#41](https://github.com/sripwoud/dublette/pull/41))
+
+### Other
+
+- *(meta)* correct encoding-match claims and audio-stale glossary entries
+- *(audio)* explain acoustic fingerprinting
+
 ## [0.4.0](https://github.com/sripwoud/dublette/compare/v0.3.0...v0.4.0) - 2026-08-12
 
 ### Added
