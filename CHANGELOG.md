@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/sripwoud/dublette/compare/v0.3.0...v0.4.0) - 2026-08-12
+
+### Added
+
+- *(audio)* extend deduplication to audio files ([#36](https://github.com/sripwoud/dublette/pull/36))
+
+### Fixed
+
+- *(deps)* replace unmaintained img_hash to drop vulnerable transpose 0.1.0 ([#37](https://github.com/sripwoud/dublette/pull/37))
+- *(ci)* point workflow branch filters at master ([#38](https://github.com/sripwoud/dublette/pull/38))
+
+### Other
+
+- *(meta)* add audio domain terms and ADR-0002 two-strategy audio matching
+
 ## [0.3.0](https://github.com/sripwoud/dublette/compare/v0.2.1...v0.3.0) - 2026-05-05
 
 ### Added
