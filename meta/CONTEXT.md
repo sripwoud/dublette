@@ -38,7 +38,11 @@ A cluster of media files connected by pairwise distance ≤ threshold (transitiv
 _Avoid_: cluster, set, batch.
 
 **Keep policy**:
-How the kept file of a duplicate group is chosen. Image, video, and encoding-match audio groups: alphabetically first. Recording-match audio groups: highest fidelity — lossless over lossy, then higher bitrate, then alphabetical tiebreak. Recording match deliberately groups files of unequal quality, so alphabetical order alone could silently keep a lossy copy over a lossless one.
+How the kept file of a duplicate group is chosen. When the caller pins one or more **keep-in directories** (ordered by precedence), a group with any member under one of them restricts its keep candidates to the members under the first such directory; all other members become deletions. Among candidates — or when no keep-in directory applies — image, video, and encoding-match audio groups keep the alphabetically first file; recording-match audio groups keep the highest fidelity — lossless over lossy, then higher bitrate, then alphabetical tiebreak. Recording match deliberately groups files of unequal quality, so alphabetical order alone could silently keep a lossy copy over a lossless one. Directory authority outranks fidelity: a curated library's copy survives over a higher-bitrate inbox copy.
+
+**Keep-in directory**:
+A directory the caller declares authoritative for keep selection (`--keep-in`, repeatable, order = precedence). Containment is decided on canonicalized paths — a member is inside iff the canonicalized directory is an ancestor of (or equals) the canonicalized member path. Affects only the keep policy, never grouping, scanning, or thresholds.
+_Avoid_: preferred directory, authoritative directory (unless qualified).
 
 **Empty file**:
 A zero-byte media file. Found independently of the deduplication pipeline; deleted only when explicitly requested by the caller.

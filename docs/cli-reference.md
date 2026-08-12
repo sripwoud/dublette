@@ -27,6 +27,7 @@ before dublette runs, so no special pattern syntax is needed.
 |      | `--only`            | `images`, `videos`, or `audio` | all         | Restrict processing to one media type                                    |
 |      | `--audio-match`     | `recording` or `encoding`      | `recording` | How audio files are matched                                              |
 |      | `--audio-threshold` | float (0.0-1.0)                | `0.1`       | Maximum acoustic fingerprint dissimilarity; recording match only         |
+|      | `--keep-in`         | directory (repeatable)         |             | Prefer keeping the group member inside this directory                    |
 |      | `--delete-empty`    | flag                           | `false`     | Find and delete 0-byte media files                                       |
 | `-y` | `--yes`             | flag                           | `false`     | Skip the confirmation prompt before deletion                             |
 | `-q` | `--quiet`           | flag                           | `false`     | Suppress progress bars and scanning messages                             |
@@ -87,6 +88,18 @@ Maximum normalized dissimilarity (0.0-1.0) between two acoustic fingerprints for
 ```bash
 dublette ~/Music --audio-threshold 0.05 -n
 ```
+
+### `--keep-in`
+
+Pins the surviving copy of a duplicate group to a directory. When any member of a group lies under a `--keep-in` directory, only the members under that directory are candidates to keep; every other member becomes a deletion. Ties among candidates fall back to the normal keep policy (highest fidelity for recording-match audio, alphabetical otherwise). Groups with no member under any `--keep-in` directory select exactly as without the flag, and grouping itself never changes -- the flag affects only which member of a group survives.
+
+The flag is repeatable; when a group has members under several `--keep-in` directories, the first-listed one wins. Paths are compared after resolving symlinks, so relative paths and trailing slashes work. The directory must exist (exit code `2` otherwise) and does not have to be one of the scanned directories -- a subdirectory of a scanned tree is fine.
+
+```bash
+dublette ~/staging ~/Music --only audio --keep-in ~/Music -y
+```
+
+Typical use: deduplicating an inbox of new files against a curated library. Every cross-tree duplicate keeps the library copy, regardless of bitrate or name, so external references to library files (a beets `library.db`, playlists) stay intact.
 
 ### `--delete-empty`
 
