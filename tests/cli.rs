@@ -124,6 +124,20 @@ fn only_images_skips_videos() {
 }
 
 #[test]
+fn audio_threshold_with_encoding_match_errors() {
+    let dir = tempfile::tempdir().unwrap();
+
+    cmd()
+        .arg(dir.path())
+        .args(["--audio-match", "encoding", "--audio-threshold", "0.2"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "--audio-threshold applies only to recording match",
+        ));
+}
+
+#[test]
 fn quiet_suppresses_progress() {
     let dir = tempfile::tempdir().unwrap();
     create_gradient_image(&dir.path().join("a.png"), true);

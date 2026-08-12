@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 
+use crate::audio::MatchStrategy;
+
 #[derive(Clone, ValueEnum)]
 pub enum MediaFilter {
     Images,
@@ -32,6 +34,21 @@ pub struct Args {
     #[arg(long, value_enum, help = "Process only images, videos, or audio")]
     pub only: Option<MediaFilter>,
 
+    #[arg(
+        long,
+        value_enum,
+        default_value = "recording",
+        help = "How audio files are matched: same recording (acoustic fingerprint) or same encoding (exact stream, tags excluded)"
+    )]
+    pub audio_match: MatchStrategy,
+
+    #[arg(
+        long,
+        value_parser = parse_audio_threshold,
+        help = "Max acoustic fingerprint dissimilarity (0.0-1.0) to consider as duplicate; recording match only [default: 0.1]"
+    )]
+    pub audio_threshold: Option<f64>,
+
     #[arg(long, help = "Delete 0-byte media files")]
     pub delete_empty: bool,
 
@@ -49,6 +66,15 @@ pub struct Args {
 
     #[arg(long, help = "Output results as JSON")]
     pub json: bool,
+}
+
+fn parse_audio_threshold(value: &str) -> Result<f64, String> {
+    let threshold: f64 = value.parse().map_err(|e| format!("{e}"))?;
+    if (0.0..=1.0).contains(&threshold) {
+        Ok(threshold)
+    } else {
+        Err(format!("{threshold} is not between 0.0 and 1.0"))
+    }
 }
 
 #[cfg(test)]
@@ -125,6 +151,31 @@ mod tests {
     fn only_audio() {
         let args = parse(&["dublette", "/tmp", "--only", "audio"]);
         assert!(matches!(args.only, Some(MediaFilter::Audio)));
+    }
+
+    #[test]
+    fn audio_match_defaults_to_recording() {
+        let args = parse(&["dublette", "/tmp"]);
+        assert_eq!(args.audio_match, MatchStrategy::Recording);
+        assert!(args.audio_threshold.is_none());
+    }
+
+    #[test]
+    fn audio_match_encoding() {
+        let args = parse(&["dublette", "/tmp", "--audio-match", "encoding"]);
+        assert_eq!(args.audio_match, MatchStrategy::Encoding);
+    }
+
+    #[test]
+    fn audio_threshold_parses() {
+        let args = parse(&["dublette", "/tmp", "--audio-threshold", "0.3"]);
+        assert_eq!(args.audio_threshold, Some(0.3));
+    }
+
+    #[test]
+    fn audio_threshold_rejects_out_of_range() {
+        assert!(Args::try_parse_from(["dublette", "/tmp", "--audio-threshold", "1.5"]).is_err());
+        assert!(Args::try_parse_from(["dublette", "/tmp", "--audio-threshold", "-0.1"]).is_err());
     }
 
     #[test]
