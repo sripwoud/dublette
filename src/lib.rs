@@ -29,6 +29,7 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
             None => None,
         },
         include_empty: args.delete_empty,
+        keep_in: Vec::new(),
     };
 
     let progress: Box<dyn dedupe::Progress> = if args.quiet {

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -27,6 +27,8 @@ pub struct Config {
     pub audio_threshold: f64,
     pub only: Option<MediaKind>,
     pub include_empty: bool,
+    /// Canonicalized directories whose members win keep selection; order = precedence.
+    pub keep_in: Vec<PathBuf>,
 }
 
 pub struct SkippedFile {
@@ -221,12 +223,55 @@ pub fn plan(
         }
     }
 
+    apply_keep_in(&mut groups, &config.keep_in, config.audio_match);
+
     Ok(DeduplicationReport {
         groups,
         empty_files,
         skipped,
         warnings,
     })
+}
+
+fn apply_keep_in(
+    groups: &mut [DuplicateGroup],
+    keep_in: &[PathBuf],
+    audio_match: audio::MatchStrategy,
+) {
+    for group in groups {
+        let Some(dir) = keep_in.iter().find(|dir| {
+            std::iter::once(&group.keep)
+                .chain(group.duplicates.iter())
+                .any(|member| is_inside(member, dir))
+        }) else {
+            continue;
+        };
+
+        let mut members = vec![std::mem::take(&mut group.keep)];
+        members.append(&mut group.duplicates);
+        let (candidates, rest): (Vec<PathBuf>, Vec<PathBuf>) = members
+            .into_iter()
+            .partition(|member| is_inside(member, dir));
+
+        let (keep, mut duplicates) = match (group.kind, audio_match) {
+            (MediaKind::Audio, audio::MatchStrategy::Recording) => audio::quality_keep(candidates),
+            _ => alphabetical_keep(candidates),
+        };
+        duplicates.extend(rest);
+        duplicates.sort();
+        group.keep = keep;
+        group.duplicates = duplicates;
+    }
+}
+
+fn alphabetical_keep(mut members: Vec<PathBuf>) -> (PathBuf, Vec<PathBuf>) {
+    members.sort();
+    let keep = members.remove(0);
+    (keep, members)
+}
+
+fn is_inside(member: &Path, dir: &Path) -> bool {
+    std::fs::canonicalize(member).is_ok_and(|path| path.starts_with(dir))
 }
 
 fn encoding_match_groups(hashed: &[HashedFile<u64>]) -> Vec<DuplicateGroup> {
@@ -420,6 +465,7 @@ mod tests {
             audio_threshold: audio::DEFAULT_THRESHOLD,
             only: None,
             include_empty: false,
+            keep_in: Vec::new(),
         }
     }
 
@@ -801,6 +847,157 @@ mod tests {
             !skipped[0].reason.is_empty(),
             "skipped reason should describe the failure"
         );
+    }
+
+    fn subdir(root: &tempfile::TempDir, name: &str) -> PathBuf {
+        let dir = root.path().join(name);
+        std::fs::create_dir(&dir).unwrap();
+        dir
+    }
+
+    fn keep_in_config(dirs: &[&PathBuf]) -> Config {
+        Config {
+            keep_in: dirs.iter().map(|d| d.canonicalize().unwrap()).collect(),
+            ..default_config()
+        }
+    }
+
+    #[test]
+    fn keep_in_overrides_alphabetical_for_images() {
+        let root = tempfile::tempdir().unwrap();
+        let inbox = subdir(&root, "inbox");
+        let library = subdir(&root, "library");
+        write_gradient(&inbox.join("a.png"));
+        write_gradient(&library.join("z.png"));
+
+        let report = plan(&dirs(&root), &keep_in_config(&[&library]), &NoopProgress).unwrap();
+
+        assert_eq!(report.groups.len(), 1);
+        assert_eq!(report.groups[0].keep, library.join("z.png"));
+        assert_eq!(report.groups[0].duplicates, vec![inbox.join("a.png")]);
+    }
+
+    #[test]
+    fn keep_in_first_listed_directory_wins() {
+        let root = tempfile::tempdir().unwrap();
+        let one = subdir(&root, "one");
+        let two = subdir(&root, "two");
+        write_gradient(&one.join("x.png"));
+        write_gradient(&two.join("y.png"));
+
+        let report = plan(&dirs(&root), &keep_in_config(&[&two, &one]), &NoopProgress).unwrap();
+
+        assert_eq!(report.groups.len(), 1);
+        assert_eq!(report.groups[0].keep, two.join("y.png"));
+        assert_eq!(report.groups[0].duplicates, vec![one.join("x.png")]);
+    }
+
+    #[test]
+    fn keep_in_tie_falls_back_to_alphabetical() {
+        let root = tempfile::tempdir().unwrap();
+        let inbox = subdir(&root, "inbox");
+        let library = subdir(&root, "library");
+        write_gradient(&inbox.join("a.png"));
+        write_gradient(&library.join("b.png"));
+        write_gradient(&library.join("c.png"));
+
+        let report = plan(&dirs(&root), &keep_in_config(&[&library]), &NoopProgress).unwrap();
+
+        assert_eq!(report.groups.len(), 1);
+        assert_eq!(report.groups[0].keep, library.join("b.png"));
+        assert_eq!(
+            report.groups[0].duplicates,
+            vec![inbox.join("a.png"), library.join("c.png")]
+        );
+    }
+
+    #[test]
+    fn keep_in_without_member_leaves_selection_unchanged() {
+        let root = tempfile::tempdir().unwrap();
+        let inbox = subdir(&root, "inbox");
+        let other = subdir(&root, "other");
+        let vault = subdir(&root, "vault");
+        write_gradient(&inbox.join("a.png"));
+        write_gradient(&other.join("z.png"));
+
+        let report = plan(&dirs(&root), &keep_in_config(&[&vault]), &NoopProgress).unwrap();
+
+        assert_eq!(report.groups.len(), 1);
+        assert_eq!(report.groups[0].keep, inbox.join("a.png"));
+        assert_eq!(report.groups[0].duplicates, vec![other.join("z.png")]);
+    }
+
+    #[test]
+    fn keep_in_preserves_group_membership() {
+        let root = tempfile::tempdir().unwrap();
+        let inbox = subdir(&root, "inbox");
+        let library = subdir(&root, "library");
+        write_gradient(&inbox.join("a.png"));
+        write_gradient(&library.join("z.png"));
+
+        let without = plan(&dirs(&root), &default_config(), &NoopProgress).unwrap();
+        let with = plan(&dirs(&root), &keep_in_config(&[&library]), &NoopProgress).unwrap();
+
+        assert_eq!(without.groups.len(), with.groups.len());
+        for (a, b) in without.groups.iter().zip(with.groups.iter()) {
+            let members = |g: &DuplicateGroup| {
+                let mut m = vec![g.keep.clone()];
+                m.extend(g.duplicates.iter().cloned());
+                m.sort();
+                m
+            };
+            assert_eq!(members(a), members(b));
+        }
+        assert_ne!(without.groups[0].keep, with.groups[0].keep);
+    }
+
+    #[test]
+    fn keep_in_overrides_quality_for_recording_audio() {
+        let Ok(ffmpeg) = hash::find_ffmpeg() else {
+            return;
+        };
+        let root = tempfile::tempdir().unwrap();
+        let staging = subdir(&root, "staging");
+        let library = subdir(&root, "library");
+        let flac = staging.join("a.flac");
+        let mp3 = library.join("b.mp3");
+        synth_recording(&ffmpeg, &flac, MELODY_A);
+        synth_recording(&ffmpeg, &mp3, MELODY_A);
+
+        let config = Config {
+            only: Some(MediaKind::Audio),
+            ..keep_in_config(&[&library])
+        };
+        let report = plan(&dirs(&root), &config, &NoopProgress).unwrap();
+
+        assert_eq!(report.groups.len(), 1);
+        assert_eq!(
+            report.groups[0].keep, mp3,
+            "keep-in must outrank both quality and alphabetical order"
+        );
+        assert_eq!(report.groups[0].duplicates, vec![flac]);
+    }
+
+    #[test]
+    fn keep_in_overrides_alphabetical_for_encoding_audio() {
+        let root = tempfile::tempdir().unwrap();
+        let inbox = subdir(&root, "inbox");
+        let library = subdir(&root, "library");
+        let original = inbox.join("a.wav");
+        let copy = library.join("z.wav");
+        write_wav(&original, 440.0);
+        std::fs::copy(&original, &copy).unwrap();
+
+        let config = Config {
+            audio_match: audio::MatchStrategy::Encoding,
+            only: Some(MediaKind::Audio),
+            ..keep_in_config(&[&library])
+        };
+        let report = plan(&dirs(&root), &config, &NoopProgress).unwrap();
+
+        assert_eq!(report.groups.len(), 1);
+        assert_eq!(report.groups[0].keep, copy);
+        assert_eq!(report.groups[0].duplicates, vec![original]);
     }
 
     #[test]
