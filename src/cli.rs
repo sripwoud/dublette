@@ -50,6 +50,13 @@ pub struct Args {
     )]
     pub audio_threshold: Option<f64>,
 
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Prefer keeping the group member inside this directory; repeatable, order = precedence"
+    )]
+    pub keep_in: Vec<PathBuf>,
+
     #[arg(long, help = "Delete 0-byte media files")]
     pub delete_empty: bool,
 
@@ -99,6 +106,13 @@ mod tests {
         assert!(!args.no_color);
         assert!(!args.json);
         assert!(args.only.is_none());
+        assert!(args.keep_in.is_empty());
+    }
+
+    #[test]
+    fn keep_in_repeats_preserve_order() {
+        let args = parse(&["dublette", "/tmp", "--keep-in", "/a", "--keep-in", "/b"]);
+        assert_eq!(args.keep_in, vec![PathBuf::from("/a"), PathBuf::from("/b")]);
     }
 
     #[test]
