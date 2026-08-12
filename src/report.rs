@@ -100,13 +100,29 @@ pub fn format_json(report: &DeduplicationReport, dry_run: bool) -> String {
         .map(|p| p.display().to_string())
         .collect();
 
+    let skipped: Vec<serde_json::Value> = report
+        .skipped
+        .iter()
+        .map(|s| {
+            serde_json::json!({
+                "path": s.path.display().to_string(),
+                "reason": s.reason.tag(),
+                "detail": s.detail,
+            })
+        })
+        .collect();
+
     let total: usize = report.groups.iter().map(|g| g.duplicates.len()).sum();
+    let total_skipped = skipped.len();
 
     let json = serde_json::json!({
         "dry_run": dry_run,
         "groups": groups,
         "total_duplicates": total,
         "empty_files": empty_files,
+        "skipped": skipped,
+        "total_skipped": total_skipped,
+        "warnings": report.warnings,
     });
 
     serde_json::to_string_pretty(&json).expect("JSON serialization should not fail")
@@ -117,6 +133,7 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::dedupe::{DeduplicationReport, DuplicateGroup, MediaKind};
+    use crate::skip::{SkipReason, SkippedFile};
 
     use super::*;
 
@@ -241,5 +258,63 @@ mod tests {
         assert_eq!(parsed["total_duplicates"], 0);
         assert!(parsed["groups"].as_array().unwrap().is_empty());
         assert!(parsed["empty_files"].as_array().unwrap().is_empty());
+        assert!(parsed["skipped"].as_array().unwrap().is_empty());
+        assert_eq!(parsed["total_skipped"], 0);
+        assert!(parsed["warnings"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn json_skipped_carries_tag_and_detail() {
+        let report = DeduplicationReport {
+            groups: vec![],
+            empty_files: vec![],
+            skipped: vec![
+                SkippedFile {
+                    path: PathBuf::from("broken.mp3"),
+                    reason: SkipReason::DecodeFailed,
+                    detail: "ffmpeg could not decode audio from broken.mp3".to_string(),
+                },
+                SkippedFile {
+                    path: PathBuf::from("brief.mp3"),
+                    reason: SkipReason::TooShort,
+                    detail: "audio in brief.mp3 is too short to fingerprint".to_string(),
+                },
+                SkippedFile {
+                    path: PathBuf::from("track.wma"),
+                    reason: SkipReason::UnsupportedContainer,
+                    detail: "failed to parse audio container track.wma: unsupported".to_string(),
+                },
+            ],
+            warnings: vec![],
+        };
+        let json = format_json(&report, true);
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["total_skipped"], 3);
+        assert_eq!(parsed["skipped"][0]["path"], "broken.mp3");
+        assert_eq!(parsed["skipped"][0]["reason"], "decode_failed");
+        assert_eq!(
+            parsed["skipped"][0]["detail"],
+            "ffmpeg could not decode audio from broken.mp3"
+        );
+        assert_eq!(parsed["skipped"][1]["reason"], "too_short");
+        assert_eq!(parsed["skipped"][2]["reason"], "unsupported_container");
+    }
+
+    #[test]
+    fn json_warnings_are_listed() {
+        let report = DeduplicationReport {
+            groups: vec![],
+            empty_files: vec![],
+            skipped: vec![],
+            warnings: vec!["ffmpeg not found on PATH; skipping video pass".to_string()],
+        };
+        let json = format_json(&report, true);
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(
+            parsed["warnings"][0],
+            "ffmpeg not found on PATH; skipping video pass"
+        );
     }
 }
