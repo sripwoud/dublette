@@ -448,6 +448,26 @@ mod tests {
     }
 
     #[test]
+    fn re_encode_of_same_recording_has_different_encoding_hash() {
+        let Some(ffmpeg) = find_ffmpeg() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let master = dir.path().join("master.wav");
+        let flac = dir.path().join("a.flac");
+        let wav = dir.path().join("b.wav");
+        synth_recording(&ffmpeg, &master, MELODY_A);
+        encode(&ffmpeg, &master, &flac);
+        encode(&ffmpeg, &master, &wav);
+
+        assert_ne!(
+            encoding_hash(&flac).unwrap(),
+            encoding_hash(&wav).unwrap(),
+            "a lossless transcode is a recording match, never an encoding match"
+        );
+    }
+
+    #[test]
     fn unparseable_file_errors() {
         let dir = tempfile::tempdir().unwrap();
         let bad = dir.path().join("bad.mp3");
