@@ -11,10 +11,15 @@ pub const VIDEO_EXTENSIONS: &[&str] = &[
     "mp4", "mov", "avi", "mkv", "wmv", "flv", "webm", "m4v", "3gp",
 ];
 
+pub const AUDIO_EXTENSIONS: &[&str] = &[
+    "mp3", "flac", "ogg", "opus", "m4a", "aac", "wav", "wma", "aiff",
+];
+
 pub fn all_media_extensions() -> HashSet<&'static str> {
     IMAGE_EXTENSIONS
         .iter()
         .chain(VIDEO_EXTENSIONS.iter())
+        .chain(AUDIO_EXTENSIONS.iter())
         .copied()
         .collect()
 }
@@ -176,6 +181,30 @@ mod tests {
             .filter_map(|p| p.file_name()?.to_str())
             .collect();
         assert_eq!(names, vec!["a.jpg", "b.jpg", "c.jpg"]);
+    }
+
+    #[test]
+    fn collects_audio_extensions() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.mp3"), &[0xFF]).unwrap();
+        fs::write(dir.path().join("b.flac"), &[0xFF]).unwrap();
+        fs::write(dir.path().join("c.txt"), &[0xFF]).unwrap();
+
+        let exts: HashSet<&str> = AUDIO_EXTENSIONS.iter().copied().collect();
+        let files = collect_files(&dirs(&dir), &exts).unwrap();
+        let names: Vec<&str> = files
+            .iter()
+            .filter_map(|p| p.file_name()?.to_str())
+            .collect();
+        assert_eq!(names, vec!["a.mp3", "b.flac"]);
+    }
+
+    #[test]
+    fn all_media_extensions_includes_audio() {
+        let exts = all_media_extensions();
+        for ext in AUDIO_EXTENSIONS {
+            assert!(exts.contains(ext), "missing audio extension {ext}");
+        }
     }
 
     #[test]

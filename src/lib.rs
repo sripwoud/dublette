@@ -1,3 +1,4 @@
+pub mod audio;
 pub mod cli;
 pub mod dedupe;
 pub mod delete;
@@ -11,11 +12,20 @@ use cli::{Args, MediaFilter};
 use dedupe::{Config, IndicatifProgress, MediaKind, NoopProgress};
 
 pub fn run(args: &Args) -> eyre::Result<bool> {
+    if args.audio_threshold.is_some() && args.audio_match == audio::MatchStrategy::Encoding {
+        return Err(eyre::eyre!(
+            "--audio-threshold applies only to recording match (--audio-match recording)"
+        ));
+    }
+
     let config = Config {
         threshold: args.threshold,
+        audio_match: args.audio_match,
+        audio_threshold: args.audio_threshold.unwrap_or(audio::DEFAULT_THRESHOLD),
         only: match &args.only {
             Some(MediaFilter::Images) => Some(MediaKind::Image),
             Some(MediaFilter::Videos) => Some(MediaKind::Video),
+            Some(MediaFilter::Audio) => Some(MediaKind::Audio),
             None => None,
         },
         include_empty: args.delete_empty,
@@ -28,6 +38,10 @@ pub fn run(args: &Args) -> eyre::Result<bool> {
     };
 
     let dedup_report = dedupe::plan(&args.directories, &config, progress.as_ref())?;
+
+    for warning in &dedup_report.warnings {
+        eprintln!("Warning: {warning}");
+    }
 
     for skipped in &dedup_report.skipped {
         eprintln!(

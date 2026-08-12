@@ -64,13 +64,14 @@ Type `y` to proceed. To skip the prompt, use the `-y` flag:
 dublette ~/Photos -y
 ```
 
-## 4. Process Only Images or Videos
+## 4. Process Only One Media Type
 
-To limit processing to one media type:
+To limit processing to images, videos, or audio:
 
 ```bash
 dublette ~/Photos --only images
 dublette ~/Videos --only videos
+dublette ~/Music --only audio
 ```
 
 ## 5. Adjust Sensitivity

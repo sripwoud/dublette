@@ -4,7 +4,7 @@ version = "0.3.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/sripwoud/dublette"
-description = "Deduplicate images and videos using perceptual hashing"
+description = "Deduplicate images, videos, and audio using perceptual hashing and acoustic fingerprints"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -15,7 +15,9 @@ eyre = "0.6"
 image = "0.23"
 img_hash = "3.2"
 indicatif = "0.17"
+lofty = "0.25.0"
 rayon = "1.10"
+rusty-chromaprint = "0.3.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tabled = "0.17"

@@ -20,25 +20,27 @@ before dublette runs, so no special pattern syntax is needed.
 
 ## Options
 
-| Flag | Long             | Type                 | Default | Description                                                  |
-| ---- | ---------------- | -------------------- | ------- | ------------------------------------------------------------ |
-| `-t` | `--threshold`    | integer              | `1`     | Maximum hamming distance to consider two files as duplicates |
-| `-n` | `--dry-run`      | flag                 | `false` | List duplicates without deleting any files                   |
-|      | `--only`         | `images` or `videos` | both    | Restrict processing to one media type                        |
-|      | `--delete-empty` | flag                 | `false` | Find and delete 0-byte media files                           |
-| `-y` | `--yes`          | flag                 | `false` | Skip the confirmation prompt before deletion                 |
-| `-q` | `--quiet`        | flag                 | `false` | Suppress progress bars and scanning messages                 |
-| `-v` | `--verbose`      | flag                 | `false` | Print per-file hashes and pairwise distances                 |
-|      | `--no-color`     | flag                 | `false` | Disable colored terminal output                              |
-|      | `--json`         | flag                 | `false` | Output results as JSON instead of a table                    |
-| `-h` | `--help`         | flag                 |         | Print help information                                       |
-| `-V` | `--version`      | flag                 |         | Print version                                                |
+| Flag | Long                | Type                           | Default     | Description                                                              |
+| ---- | ------------------- | ------------------------------ | ----------- | ------------------------------------------------------------------------ |
+| `-t` | `--threshold`       | integer                        | `1`         | Maximum hamming distance to consider two image/video files as duplicates |
+| `-n` | `--dry-run`         | flag                           | `false`     | List duplicates without deleting any files                               |
+|      | `--only`            | `images`, `videos`, or `audio` | all         | Restrict processing to one media type                                    |
+|      | `--audio-match`     | `recording` or `encoding`      | `recording` | How audio files are matched                                              |
+|      | `--audio-threshold` | float (0.0-1.0)                | `0.1`       | Maximum acoustic fingerprint dissimilarity; recording match only         |
+|      | `--delete-empty`    | flag                           | `false`     | Find and delete 0-byte media files                                       |
+| `-y` | `--yes`             | flag                           | `false`     | Skip the confirmation prompt before deletion                             |
+| `-q` | `--quiet`           | flag                           | `false`     | Suppress progress bars and scanning messages                             |
+| `-v` | `--verbose`         | flag                           | `false`     | Print per-file hashes and pairwise distances                             |
+|      | `--no-color`        | flag                           | `false`     | Disable colored terminal output                                          |
+|      | `--json`            | flag                           | `false`     | Output results as JSON instead of a table                                |
+| `-h` | `--help`            | flag                           |             | Print help information                                                   |
+| `-V` | `--version`         | flag                           |             | Print version                                                            |
 
 ## Option Details
 
 ### `--threshold` (`-t`)
 
-Controls the maximum hamming distance between two perceptual hashes for them to be considered duplicates. A distance of `0` means the hashes must be identical. The default of `1` tolerates a single bit of difference, which catches files that are visually the same but differ slightly from re-encoding.
+Controls the maximum hamming distance between two perceptual hashes for image and video files to be considered duplicates. A distance of `0` means the hashes must be identical. The default of `1` tolerates a single bit of difference, which catches files that are visually the same but differ slightly from re-encoding. Audio has its own threshold (`--audio-threshold`).
 
 Higher values catch more aggressively similar files but increase the risk of false positives.
 
@@ -57,11 +59,33 @@ dublette ~/Photos -n
 
 ### `--only`
 
-Restrict processing to images or videos only. Without this flag, both are processed.
+Restrict processing to one media type. Without this flag, images, videos, and audio are all processed in separate passes.
 
 ```bash
 dublette ~/Media --only images
 dublette ~/Media --only videos
+dublette ~/Media --only audio
+```
+
+### `--audio-match`
+
+Selects how audio files are compared.
+
+- `recording` (default): computes an acoustic fingerprint from the decoded audio (up to the first 120 seconds, via ffmpeg) and groups files whose fingerprint dissimilarity is within `--audio-threshold`. The same recording matches across formats and bitrates -- an mp3 rip of a flac is a duplicate.
+- `encoding`: hashes the encoded audio stream with tag regions excluded. A retagged copy matches; a re-encode never does. Exact, takes no threshold, and needs no ffmpeg.
+
+Recording-match groups keep the highest-fidelity file: lossless (flac, wav, aiff) over lossy, then higher bitrate, then alphabetical. All other groups keep the alphabetically first file.
+
+```bash
+dublette ~/Music --audio-match encoding -n
+```
+
+### `--audio-threshold`
+
+Maximum normalized dissimilarity (0.0-1.0) between two acoustic fingerprints for the files to be considered the same recording. Applies to recording match only; combining it with `--audio-match encoding` is an error. The default of `0.1` comfortably matches the same recording across codecs while rejecting different recordings.
+
+```bash
+dublette ~/Music --audio-threshold 0.05 -n
 ```
 
 ### `--delete-empty`
@@ -157,5 +181,11 @@ jpg, jpeg, png, bmp, gif, tiff, webp
 ### Videos (requires ffmpeg)
 
 mp4, mov, avi, mkv, wmv, flv, webm, m4v, 3gp
+
+### Audio (recording match requires ffmpeg)
+
+mp3, flac, ogg, opus, m4a, aac, wav, wma, aiff
+
+Audio tracks embedded in video files are never fingerprinted -- a music video and its audio rip are not duplicates of each other. Under encoding match, wma files are reported as skipped (no tag parser support); recording match handles them via ffmpeg.
 
 File extension matching is case-insensitive. A file named `PHOTO.JPG` is treated the same as `photo.jpg`.

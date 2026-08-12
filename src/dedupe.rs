@@ -3,20 +3,28 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use img_hash::ImageHash;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 
-use crate::{delete, hash, scan};
+use crate::{audio, delete, hash, scan};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MediaKind {
     Image,
     Video,
+    Audio,
+}
+
+impl MediaKind {
+    fn pass_enabled(self, only: Option<MediaKind>) -> bool {
+        only.is_none_or(|kind| kind == self)
+    }
 }
 
 pub struct Config {
     pub threshold: u32,
+    pub audio_match: audio::MatchStrategy,
+    pub audio_threshold: f64,
     pub only: Option<MediaKind>,
     pub include_empty: bool,
 }
@@ -26,9 +34,9 @@ pub struct SkippedFile {
     pub reason: String,
 }
 
-pub struct HashedFile {
+pub struct HashedFile<H> {
     pub path: PathBuf,
-    pub hash: ImageHash,
+    pub hash: H,
 }
 
 pub struct DuplicateGroup {
@@ -41,6 +49,7 @@ pub struct DeduplicationReport {
     pub groups: Vec<DuplicateGroup>,
     pub empty_files: Vec<PathBuf>,
     pub skipped: Vec<SkippedFile>,
+    pub warnings: Vec<String>,
 }
 
 pub trait Progress: Sync {
@@ -121,6 +130,7 @@ pub fn plan(
 ) -> eyre::Result<DeduplicationReport> {
     let mut skipped: Vec<SkippedFile> = Vec::new();
     let mut groups: Vec<DuplicateGroup> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
 
     let empty_files = if config.include_empty {
         delete::find_empty_files(dirs)?
@@ -128,7 +138,7 @@ pub fn plan(
         Vec::new()
     };
 
-    if !matches!(config.only, Some(MediaKind::Video)) {
+    if MediaKind::Image.pass_enabled(config.only) {
         let exts: HashSet<&str> = scan::IMAGE_EXTENSIONS.iter().copied().collect();
         let files = scan::collect_files(dirs, &exts)?;
         let (hashed, image_skipped) = hash_in_parallel(&files, progress, "Hashing images", |p| {
@@ -138,44 +148,122 @@ pub fn plan(
         groups.extend(compare_and_build_groups(
             &hashed,
             config.threshold,
+            |a, b| a.dist(b),
             progress,
             "image",
             MediaKind::Image,
         ));
     }
 
-    if !matches!(config.only, Some(MediaKind::Image))
-        && let Ok(ffmpeg) = hash::find_ffmpeg()
-    {
-        let exts: HashSet<&str> = scan::VIDEO_EXTENSIONS.iter().copied().collect();
+    if MediaKind::Video.pass_enabled(config.only) {
+        match hash::find_ffmpeg() {
+            Ok(ffmpeg) => {
+                let exts: HashSet<&str> = scan::VIDEO_EXTENSIONS.iter().copied().collect();
+                let files = scan::collect_files(dirs, &exts)?;
+                let (hashed, video_skipped) =
+                    hash_in_parallel(&files, progress, "Hashing videos", |p| {
+                        hash::extract_video_frame_hash(p, &ffmpeg)
+                    });
+                skipped.extend(video_skipped);
+                groups.extend(compare_and_build_groups(
+                    &hashed,
+                    config.threshold,
+                    |a, b| a.dist(b),
+                    progress,
+                    "video",
+                    MediaKind::Video,
+                ));
+            }
+            Err(_) => warnings.push("ffmpeg not found on PATH; skipping video pass".to_string()),
+        }
+    }
+
+    if MediaKind::Audio.pass_enabled(config.only) {
+        let exts: HashSet<&str> = scan::AUDIO_EXTENSIONS.iter().copied().collect();
         let files = scan::collect_files(dirs, &exts)?;
-        let (hashed, video_skipped) = hash_in_parallel(&files, progress, "Hashing videos", |p| {
-            hash::extract_video_frame_hash(p, &ffmpeg)
-        });
-        skipped.extend(video_skipped);
-        groups.extend(compare_and_build_groups(
-            &hashed,
-            config.threshold,
-            progress,
-            "video",
-            MediaKind::Video,
-        ));
+        match config.audio_match {
+            audio::MatchStrategy::Recording => match hash::find_ffmpeg() {
+                Ok(ffmpeg) => {
+                    let (fingerprinted, audio_skipped) =
+                        hash_in_parallel(&files, progress, "Fingerprinting audio", |p| {
+                            audio::fingerprint(p, &ffmpeg)
+                        });
+                    skipped.extend(audio_skipped);
+                    let mut recording_groups = compare_and_build_groups(
+                        &fingerprinted,
+                        config.audio_threshold,
+                        audio::dissimilarity,
+                        progress,
+                        "audio file",
+                        MediaKind::Audio,
+                    );
+                    for group in &mut recording_groups {
+                        let mut members = vec![std::mem::take(&mut group.keep)];
+                        members.append(&mut group.duplicates);
+                        (group.keep, group.duplicates) = audio::quality_keep(members);
+                    }
+                    groups.extend(recording_groups);
+                }
+                Err(_) => warnings.push(
+                    "ffmpeg not found on PATH; skipping audio pass (recording match decodes \
+                     via ffmpeg; --audio-match encoding works without it)"
+                        .to_string(),
+                ),
+            },
+            audio::MatchStrategy::Encoding => {
+                let (hashed, audio_skipped) =
+                    hash_in_parallel(&files, progress, "Hashing audio streams", |p| {
+                        audio::encoding_hash(p)
+                    });
+                skipped.extend(audio_skipped);
+                groups.extend(encoding_match_groups(&hashed));
+            }
+        }
     }
 
     Ok(DeduplicationReport {
         groups,
         empty_files,
         skipped,
+        warnings,
     })
 }
 
-fn compare_and_build_groups(
-    hashed: &[HashedFile],
-    threshold: u32,
+fn encoding_match_groups(hashed: &[HashedFile<u64>]) -> Vec<DuplicateGroup> {
+    let mut buckets: std::collections::HashMap<u64, Vec<PathBuf>> =
+        std::collections::HashMap::new();
+    for h in hashed {
+        buckets.entry(h.hash).or_default().push(h.path.clone());
+    }
+
+    let mut groups: Vec<DuplicateGroup> = buckets
+        .into_values()
+        .filter(|members| members.len() >= 2)
+        .map(|mut members| {
+            members.sort();
+            let keep = members.remove(0);
+            DuplicateGroup {
+                kind: MediaKind::Audio,
+                keep,
+                duplicates: members,
+            }
+        })
+        .collect();
+    groups.sort_by(|a, b| a.keep.cmp(&b.keep));
+    groups
+}
+
+fn compare_and_build_groups<H, D>(
+    hashed: &[HashedFile<H>],
+    threshold: D,
+    dist: impl Fn(&H, &H) -> D,
     progress: &dyn Progress,
     label: &str,
     kind: MediaKind,
-) -> Vec<DuplicateGroup> {
+) -> Vec<DuplicateGroup>
+where
+    D: PartialOrd + fmt::Display,
+{
     let total_pairs = (hashed.len() * hashed.len().saturating_sub(1)) / 2;
     progress.phase_start(&format!("Comparing {label}s"), total_pairs as u64);
 
@@ -186,7 +274,7 @@ fn compare_and_build_groups(
 
     for i in 0..hashed.len() {
         for j in (i + 1)..hashed.len() {
-            let distance = hashed[i].hash.dist(&hashed[j].hash);
+            let distance = dist(&hashed[i].hash, &hashed[j].hash);
             progress.diag(format_args!(
                 "{} <-> {}: distance={}",
                 hashed[i].path.display(),
@@ -211,17 +299,18 @@ fn compare_and_build_groups(
     scan::build_duplicate_groups(&adjacency, kind)
 }
 
-fn hash_in_parallel<F>(
+fn hash_in_parallel<H, F>(
     files: &[PathBuf],
     progress: &dyn Progress,
     label: &str,
     hash_fn: F,
-) -> (Vec<HashedFile>, Vec<SkippedFile>)
+) -> (Vec<HashedFile<H>>, Vec<SkippedFile>)
 where
-    F: Fn(&PathBuf) -> eyre::Result<ImageHash> + Sync,
+    H: fmt::Debug + Send,
+    F: Fn(&PathBuf) -> eyre::Result<H> + Sync,
 {
     progress.phase_start(label, files.len() as u64);
-    let results: Vec<Result<HashedFile, SkippedFile>> = files
+    let results: Vec<Result<HashedFile<H>, SkippedFile>> = files
         .par_iter()
         .map(|f| {
             let outcome = hash_fn(f);
@@ -243,7 +332,7 @@ where
         .collect();
     progress.phase_finish();
 
-    let mut hashed: Vec<HashedFile> = Vec::new();
+    let mut hashed: Vec<HashedFile<H>> = Vec::new();
     let mut skipped: Vec<SkippedFile> = Vec::new();
     for r in results {
         match r {
@@ -327,6 +416,8 @@ mod tests {
     fn default_config() -> Config {
         Config {
             threshold: 0,
+            audio_match: audio::MatchStrategy::Recording,
+            audio_threshold: audio::DEFAULT_THRESHOLD,
             only: None,
             include_empty: false,
         }
@@ -420,8 +511,7 @@ mod tests {
 
         let config = Config {
             threshold: distance,
-            only: None,
-            include_empty: false,
+            ..default_config()
         };
         let report = plan(&dirs(&dir), &config, &NoopProgress).unwrap();
 
@@ -439,9 +529,8 @@ mod tests {
         std::fs::write(dir.path().join("garbage.mp4"), b"not-a-video").unwrap();
 
         let config = Config {
-            threshold: 0,
             only: Some(MediaKind::Image),
-            include_empty: false,
+            ..default_config()
         };
         let report = plan(&dirs(&dir), &config, &NoopProgress).unwrap();
 
@@ -465,9 +554,8 @@ mod tests {
         write_gradient(&b);
 
         let config = Config {
-            threshold: 0,
             only: Some(MediaKind::Video),
-            include_empty: false,
+            ..default_config()
         };
         let report = plan(&dirs(&dir), &config, &NoopProgress).unwrap();
 
@@ -485,15 +573,198 @@ mod tests {
     }
 
     #[test]
+    fn plan_only_audio_skips_images_and_videos() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.png");
+        let b = dir.path().join("b.png");
+        write_gradient(&a);
+        write_gradient(&b);
+        std::fs::write(dir.path().join("garbage.mp4"), b"not-a-video").unwrap();
+
+        let config = Config {
+            only: Some(MediaKind::Audio),
+            ..default_config()
+        };
+        let report = plan(&dirs(&dir), &config, &NoopProgress).unwrap();
+
+        assert!(
+            report.groups.is_empty(),
+            "no image or video groups expected"
+        );
+        assert!(
+            report.skipped.is_empty(),
+            "image and video files should not have been processed"
+        );
+    }
+
+    fn write_wav(path: &std::path::Path, frequency: f64) {
+        let samples: Vec<i16> = (0..4410)
+            .map(|i| {
+                let t = i as f64 / 44100.0;
+                ((t * frequency * 2.0 * std::f64::consts::PI).sin() * 20000.0) as i16
+            })
+            .collect();
+        let data_len = (samples.len() * 2) as u32;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+        bytes.extend_from_slice(b"WAVE");
+        bytes.extend_from_slice(b"fmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&44100u32.to_le_bytes());
+        bytes.extend_from_slice(&(44100u32 * 2).to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_len.to_le_bytes());
+        for sample in &samples {
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    fn retag(path: &std::path::Path, title: &str) {
+        use lofty::config::WriteOptions;
+        use lofty::prelude::*;
+        use lofty::tag::{Tag, TagType};
+
+        let mut tag = Tag::new(TagType::Id3v2);
+        tag.set_title(title.to_string());
+        tag.save_to_path(path, WriteOptions::default()).unwrap();
+    }
+
+    #[test]
+    fn plan_encoding_match_groups_retagged_audio_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.wav");
+        let b = dir.path().join("b.wav");
+        let c = dir.path().join("c.wav");
+        write_wav(&a, 440.0);
+        std::fs::copy(&a, &b).unwrap();
+        retag(&b, "same recording, new tags");
+        write_wav(&c, 880.0);
+
+        let config = Config {
+            audio_match: audio::MatchStrategy::Encoding,
+            only: Some(MediaKind::Audio),
+            ..default_config()
+        };
+        let report = plan(&dirs(&dir), &config, &NoopProgress).unwrap();
+
+        assert_eq!(report.groups.len(), 1);
+        assert_eq!(report.groups[0].kind, MediaKind::Audio);
+        assert_eq!(report.groups[0].keep, a);
+        assert_eq!(report.groups[0].duplicates, vec![b]);
+    }
+
+    fn synth_recording(ffmpeg: &std::path::Path, out: &std::path::Path, melody: &str) {
+        let status = std::process::Command::new(ffmpeg)
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("aevalsrc={melody}:s=44100:d=10"),
+            ])
+            .arg(out)
+            .status()
+            .unwrap();
+        assert!(status.success(), "ffmpeg failed to synthesize {out:?}");
+    }
+
+    const MELODY_A: &str = "sin(2*PI*(220+55*floor(t*2))*t)";
+    const MELODY_B: &str = "sin(2*PI*(392+98*floor(t*3))*t)";
+
+    #[test]
+    fn plan_recording_match_groups_same_recording_across_codecs() {
+        let Ok(ffmpeg) = hash::find_ffmpeg() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let mp3 = dir.path().join("a.mp3");
+        let flac = dir.path().join("z.flac");
+        let other = dir.path().join("c.mp3");
+        synth_recording(&ffmpeg, &mp3, MELODY_A);
+        synth_recording(&ffmpeg, &flac, MELODY_A);
+        synth_recording(&ffmpeg, &other, MELODY_B);
+
+        let config = Config {
+            only: Some(MediaKind::Audio),
+            ..default_config()
+        };
+        let report = plan(&dirs(&dir), &config, &NoopProgress).unwrap();
+
+        assert_eq!(report.groups.len(), 1);
+        assert_eq!(report.groups[0].kind, MediaKind::Audio);
+        assert_eq!(
+            report.groups[0].keep, flac,
+            "recording match must keep the lossless file over the alphabetically first mp3"
+        );
+        assert_eq!(report.groups[0].duplicates, vec![mp3]);
+    }
+
+    #[test]
+    fn plan_audio_groups_never_contain_video_files() {
+        let Ok(ffmpeg) = hash::find_ffmpeg() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let m4a = dir.path().join("a.m4a");
+        let flac = dir.path().join("b.flac");
+        let video = dir.path().join("video.mp4");
+        synth_recording(&ffmpeg, &m4a, MELODY_A);
+        synth_recording(&ffmpeg, &flac, MELODY_A);
+        let status = std::process::Command::new(&ffmpeg)
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=64x64:d=10",
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("aevalsrc={MELODY_A}:s=44100:d=10"),
+                "-shortest",
+            ])
+            .arg(&video)
+            .status()
+            .unwrap();
+        assert!(status.success(), "ffmpeg failed to mux test video");
+
+        let report = plan(&dirs(&dir), &default_config(), &NoopProgress).unwrap();
+
+        let audio_groups: Vec<&DuplicateGroup> = report
+            .groups
+            .iter()
+            .filter(|g| g.kind == MediaKind::Audio)
+            .collect();
+        assert_eq!(audio_groups.len(), 1);
+        let mut members = vec![audio_groups[0].keep.clone()];
+        members.extend(audio_groups[0].duplicates.iter().cloned());
+        members.sort();
+        assert_eq!(
+            members,
+            vec![m4a, flac],
+            "video-embedded audio must never join an audio group"
+        );
+    }
+
+    #[test]
     fn plan_include_empty_populates_empty_files() {
         let dir = tempfile::tempdir().unwrap();
         let empty = dir.path().join("empty.jpg");
         std::fs::write(&empty, []).unwrap();
 
         let config = Config {
-            threshold: 0,
-            only: None,
             include_empty: true,
+            ..default_config()
         };
         let report = plan(&dirs(&dir), &config, &NoopProgress).unwrap();
 

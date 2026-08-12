@@ -20,6 +20,7 @@ fn kind_label(kind: MediaKind) -> &'static str {
     match kind {
         MediaKind::Image => "image",
         MediaKind::Video => "video",
+        MediaKind::Audio => "audio",
     }
 }
 
@@ -124,6 +125,7 @@ mod tests {
             groups,
             empty_files: vec![],
             skipped: vec![],
+            warnings: vec![],
         }
     }
 
@@ -192,6 +194,17 @@ mod tests {
     }
 
     #[test]
+    fn table_renders_audio_kind() {
+        let report = make_report(vec![DuplicateGroup {
+            kind: MediaKind::Audio,
+            keep: PathBuf::from("a.mp3"),
+            duplicates: vec![PathBuf::from("b.mp3")],
+        }]);
+        let output = format_table(&report, false);
+        assert!(output.contains("audio"));
+    }
+
+    #[test]
     fn empty_table_shows_count() {
         let files = vec![PathBuf::from("a.jpg"), PathBuf::from("b.jpg")];
         let output = format_empty_table(&files, true);
@@ -209,6 +222,7 @@ mod tests {
             }],
             empty_files: vec![PathBuf::from("empty.jpg")],
             skipped: vec![],
+            warnings: vec![],
         };
         let json = format_json(&report, true);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();

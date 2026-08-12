@@ -56,6 +56,20 @@ If you do not have ffmpeg installed, or want to avoid the overhead of frame extr
 dublette ~/Media --only images
 ```
 
+## Audio: Keep the Best Copy of Each Recording
+
+The default recording match groups the same recording across formats and bitrates, keeping the highest-fidelity copy (a flac survives its mp3 rip):
+
+```bash
+dublette ~/Music --only audio --dry-run
+```
+
+To only remove exact copies that differ in tags -- never grouping different encodings:
+
+```bash
+dublette ~/Music --only audio --audio-match encoding --dry-run
+```
+
 ## Adjust the Threshold
 
 The default threshold of `1` is conservative. To require exact perceptual matches:
