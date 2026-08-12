@@ -3,7 +3,6 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use img_hash::ImageHash;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 
@@ -33,9 +32,9 @@ pub struct SkippedFile {
     pub reason: String,
 }
 
-pub struct HashedFile {
+pub struct HashedFile<H> {
     pub path: PathBuf,
-    pub hash: ImageHash,
+    pub hash: H,
 }
 
 pub struct DuplicateGroup {
@@ -145,6 +144,7 @@ pub fn plan(
         groups.extend(compare_and_build_groups(
             &hashed,
             config.threshold,
+            |a, b| a.dist(b),
             progress,
             "image",
             MediaKind::Image,
@@ -163,6 +163,7 @@ pub fn plan(
         groups.extend(compare_and_build_groups(
             &hashed,
             config.threshold,
+            |a, b| a.dist(b),
             progress,
             "video",
             MediaKind::Video,
@@ -176,13 +177,17 @@ pub fn plan(
     })
 }
 
-fn compare_and_build_groups(
-    hashed: &[HashedFile],
-    threshold: u32,
+fn compare_and_build_groups<H, D>(
+    hashed: &[HashedFile<H>],
+    threshold: D,
+    dist: impl Fn(&H, &H) -> D,
     progress: &dyn Progress,
     label: &str,
     kind: MediaKind,
-) -> Vec<DuplicateGroup> {
+) -> Vec<DuplicateGroup>
+where
+    D: PartialOrd + fmt::Display,
+{
     let total_pairs = (hashed.len() * hashed.len().saturating_sub(1)) / 2;
     progress.phase_start(&format!("Comparing {label}s"), total_pairs as u64);
 
@@ -193,7 +198,7 @@ fn compare_and_build_groups(
 
     for i in 0..hashed.len() {
         for j in (i + 1)..hashed.len() {
-            let distance = hashed[i].hash.dist(&hashed[j].hash);
+            let distance = dist(&hashed[i].hash, &hashed[j].hash);
             progress.diag(format_args!(
                 "{} <-> {}: distance={}",
                 hashed[i].path.display(),
@@ -218,17 +223,18 @@ fn compare_and_build_groups(
     scan::build_duplicate_groups(&adjacency, kind)
 }
 
-fn hash_in_parallel<F>(
+fn hash_in_parallel<H, F>(
     files: &[PathBuf],
     progress: &dyn Progress,
     label: &str,
     hash_fn: F,
-) -> (Vec<HashedFile>, Vec<SkippedFile>)
+) -> (Vec<HashedFile<H>>, Vec<SkippedFile>)
 where
-    F: Fn(&PathBuf) -> eyre::Result<ImageHash> + Sync,
+    H: fmt::Debug + Send,
+    F: Fn(&PathBuf) -> eyre::Result<H> + Sync,
 {
     progress.phase_start(label, files.len() as u64);
-    let results: Vec<Result<HashedFile, SkippedFile>> = files
+    let results: Vec<Result<HashedFile<H>, SkippedFile>> = files
         .par_iter()
         .map(|f| {
             let outcome = hash_fn(f);
@@ -250,7 +256,7 @@ where
         .collect();
     progress.phase_finish();
 
-    let mut hashed: Vec<HashedFile> = Vec::new();
+    let mut hashed: Vec<HashedFile<H>> = Vec::new();
     let mut skipped: Vec<SkippedFile> = Vec::new();
     for r in results {
         match r {
