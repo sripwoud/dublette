@@ -29,7 +29,7 @@ Hashing runs in parallel across all available CPU cores using `rayon`. Files tha
 
 ### Image Hashing
 
-The image is opened, decoded, and passed to the `img_hash` hasher, which produces a 128-bit perceptual hash.
+The image is opened, decoded, and passed to the `image_hasher` hasher, which produces a 40-bit perceptual hash.
 
 ### Video Hashing
 
