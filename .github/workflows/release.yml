@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     branches: [master]
+  workflow_dispatch:
 
 jobs:
   release-plz-release:
@@ -10,9 +11,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    concurrency:
+      group: release-plz-release-${{ github.ref }}
+      cancel-in-progress: false
     outputs:
-      releases_created: ${{ steps.release.outputs.releases_created }}
-      tag: ${{ steps.get-tag.outputs.tag }}
+      releases_created: ${{ steps.outputs.outputs.releases_created }}
+      tag: ${{ steps.outputs.outputs.tag }}
+      draft_release_created: ${{ steps.outputs.outputs.draft_release_created }}
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -41,10 +46,72 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-      - name: Get release tag
-        id: get-tag
-        if: steps.release.outputs.releases_created == 'true'
-        run: echo "tag=${{ fromJSON(steps.release.outputs.releases)[0].tag }}" >> "$GITHUB_OUTPUT"
+      - name: Recover skipped release tag
+        id: recovery
+        if: steps.release.outputs.releases_created != 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          head_subject=$(git log -1 --pretty=%s)
+          if [[ ! "$head_subject" =~ ^chore:\ release\ v ]]; then
+            echo "HEAD ($head_subject) is not a release commit; nothing to recover."
+            exit 0
+          fi
+          version=$(awk -F'"' '/^version = / { print $2; exit }' Cargo.toml)
+          tag="v${version}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists on remote; enabling downstream binary upload."
+            {
+              echo "tag_present=true"
+              echo "tag=${tag}"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::warning::release-plz skipped tagging ${tag} (likely already published on crates.io). Creating tag now."
+          head_sha=$(git rev-parse HEAD)
+          tag_sha=$(gh api -X POST "repos/${GITHUB_REPOSITORY}/git/tags" \
+            -f tag="${tag}" \
+            -f message="${tag}" \
+            -f object="${head_sha}" \
+            -f type=commit \
+            --jq '.sha')
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${tag}" \
+            -f sha="${tag_sha}" >/dev/null
+          {
+            echo "tag_present=true"
+            echo "tag=${tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve job outputs
+        id: outputs
+        env:
+          RELEASES_CREATED: ${{ steps.release.outputs.releases_created }}
+          RELEASES_JSON: ${{ steps.release.outputs.releases }}
+          RECOVERY_TAG_PRESENT: ${{ steps.recovery.outputs.tag_present }}
+          RECOVERY_TAG: ${{ steps.recovery.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASES_CREATED" == "true" ]]; then
+            tag=$(echo "$RELEASES_JSON" | jq -r '.[0].tag')
+            {
+              echo "releases_created=true"
+              echo "tag=${tag}"
+              echo "draft_release_created=true"
+            } >> "$GITHUB_OUTPUT"
+          elif [[ "$RECOVERY_TAG_PRESENT" == "true" ]]; then
+            {
+              echo "releases_created=true"
+              echo "tag=${RECOVERY_TAG}"
+              echo "draft_release_created=false"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "releases_created=false"
+              echo "draft_release_created=false"
+            } >> "$GITHUB_OUTPUT"
+          fi
 
   release-plz-pr:
     name: Release-plz PR
@@ -105,6 +172,11 @@ jobs:
         with:
           ref: ${{ needs.release-plz-release.outputs.tag }}
 
+      - uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: dublette
@@ -112,3 +184,17 @@ jobs:
           ref: refs/tags/${{ needs.release-plz-release.outputs.tag }}
           checksum: sha256
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-release:
+    name: Publish draft release
+    needs: [release-plz-release, upload-binaries]
+    if: needs.release-plz-release.outputs.draft_release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Flip draft to published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-plz-release.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
