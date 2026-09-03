@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/sripwoud/dublette/compare/v0.5.0...v0.5.1) - 2026-09-03
+
+### Fixed
+
+- *(deps)* update all non-major dependencies ([#52](https://github.com/sripwoud/dublette/pull/52))
+
+### Other
+
+- *(deps)* update rust crate which to v8 ([#58](https://github.com/sripwoud/dublette/pull/58))
+- release on cargo dependency bumps ([#57](https://github.com/sripwoud/dublette/pull/57))
+- refresh apt index before installing ffmpeg ([#55](https://github.com/sripwoud/dublette/pull/55))
+- *(deps)* update amannn/action-semantic-pull-request action to v6 ([#53](https://github.com/sripwoud/dublette/pull/53))
+- adopt renovate, pin mise tools, fix clippy 1.98 lint ([#51](https://github.com/sripwoud/dublette/pull/51))
+- bump jdx/mise-action to v4 and changed-files to v47 ([#49](https://github.com/sripwoud/dublette/pull/49))
+- bump actions/checkout to v7 ([#48](https://github.com/sripwoud/dublette/pull/48))
+- *(release)* authenticate release-plz with a github app token ([#47](https://github.com/sripwoud/dublette/pull/47))
+
 ## [0.5.0](https://github.com/sripwoud/dublette/compare/v0.4.0...v0.5.0) - 2026-08-12
 
 ### Added
