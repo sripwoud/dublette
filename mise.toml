@@ -16,12 +16,12 @@ alias = "t"
 run = "cargo nextest run"
 
 [tools]
-"cargo:cargo-nextest" = "latest"
-"cargo:convco" = "latest"
-"aqua:dprint/dprint" = "latest"
-hk = "latest"
-pkl = "latest"
-rust = "latest"
+"cargo:cargo-nextest" = "0.9.143"
+"cargo:convco" = "0.7.1"
+"aqua:dprint/dprint" = "0.57.0"
+hk = "1.57.0"
+pkl = "0.32.1"
+rust = "1.98.0"
 
 [vars]
 dublette = "target/release/dublette"
