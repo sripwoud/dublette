@@ -1,5 +1,14 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", "group:allNonMajor"],
-  "semanticCommits": "enabled"
+  "semanticCommits": "enabled",
+  "packageRules": [
+    {
+      "description": "Cargo dependencies are linked into the released binary, so a bump only reaches users through a release — build is in release_commits. Needed because :semanticPrefixFixDepsChoreOthers types lockfile-only updates as chore, and a patch-level security fix arrives lockfile-only — sibling repo colporteur stranded an ammonia XSS fix on master this way. Tooling, dev-dependencies and actions never reach the artifact and stay chore.",
+      "matchManagers": ["cargo"],
+      "matchDepTypes": ["dependencies"],
+      "semanticCommitType": "build",
+      "semanticCommitScope": "deps"
+    }
+  ]
 }
