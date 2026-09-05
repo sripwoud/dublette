@@ -18,8 +18,8 @@ run = "cargo nextest run"
 [tools]
 "cargo:cargo-nextest" = "0.9.143"
 "cargo:convco" = "0.7.2"
-"aqua:dprint/dprint" = "0.57.1"
-hk = "1.57.0"
+"aqua:dprint/dprint" = "0.57.3"
+hk = "1.58.1"
 pkl = "0.32.1"
 rust = "1.98.1"
 
