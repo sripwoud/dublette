@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2](https://github.com/sripwoud/dublette/compare/v0.5.1...v0.5.2) - 2026-09-07
+
+### Other
+
+- *(deps)* update all non-major dependencies ([#61](https://github.com/sripwoud/dublette/pull/61))
+- *(deps)* update all non-major dependencies ([#60](https://github.com/sripwoud/dublette/pull/60))
+- gate release publication on binary upload ([#59](https://github.com/sripwoud/dublette/pull/59))
+
 ## [0.5.1](https://github.com/sripwoud/dublette/compare/v0.5.0...v0.5.1) - 2026-09-03
 
 ### Fixed
