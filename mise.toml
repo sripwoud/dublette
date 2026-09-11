@@ -16,7 +16,7 @@ alias = "t"
 run = "cargo nextest run"
 
 [tools]
-"cargo:cargo-nextest" = "0.9.143"
+"cargo:cargo-nextest" = "0.9.144"
 "cargo:convco" = "0.7.2"
 "aqua:dprint/dprint" = "0.57.4"
 hk = "1.58.1"
