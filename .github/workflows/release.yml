@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     concurrency:
       group: release-plz-release-${{ github.ref }}
       cancel-in-progress: false
@@ -37,6 +38,10 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Authenticate to crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
       - name: Run release-plz
         id: release
         uses: release-plz/action@v0.5
@@ -44,7 +49,7 @@ jobs:
           command: release
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
       - name: Recover skipped release tag
         id: recovery
@@ -118,6 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     concurrency:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
@@ -140,13 +146,17 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Authenticate to crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
       - name: Run release-plz
         uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
   upload-binaries:
     name: Upload ${{ matrix.target }}
