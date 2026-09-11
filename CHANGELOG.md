@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3](https://github.com/espadat-studio/dublette/compare/v0.5.2...v0.5.3) - 2026-09-11
+
+### Fixed
+
+- move docs site to dublette.espadat.com ([#64](https://github.com/espadat-studio/dublette/pull/64))
+
+### Other
+
+- *(deps)* update dependency cargo:cargo-nextest to v0.9.144 ([#63](https://github.com/espadat-studio/dublette/pull/63))
+
 ## [0.5.2](https://github.com/sripwoud/dublette/compare/v0.5.1...v0.5.2) - 2026-09-07
 
 ### Other
