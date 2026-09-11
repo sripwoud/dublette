@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center"><a href="https://dublette.sripwoud.xyz">Dublette</a></h1>
+  <h1 align="center"><a href="https://dublette.espadat.com">Dublette</a></h1>
 </p>
 <p align="center">
   <a href="https://crates.io/crates/dublette">
@@ -43,12 +43,12 @@ dublette ~/Photos --yes
 
 ## Documentation
 
-Full documentation available at [dublette.sripwoud.xyz](https://dublette.sripwoud.xyz):
+Full documentation available at [dublette.espadat.com](https://dublette.espadat.com):
 
-- [Installation](https://dublette.sripwoud.xyz/#/getting-started/installation) - Detailed setup guide
-- [Quick Start](https://dublette.sripwoud.xyz/#/getting-started/quick-start) - Step-by-step walkthrough
-- [CLI Reference](https://dublette.sripwoud.xyz/#/cli-reference) - All options documented
-- [How It Works](https://dublette.sripwoud.xyz/#/how-it-works/perceptual-hashing) - Perceptual hashing explained
+- [Installation](https://dublette.espadat.com/#/getting-started/installation) - Detailed setup guide
+- [Quick Start](https://dublette.espadat.com/#/getting-started/quick-start) - Step-by-step walkthrough
+- [CLI Reference](https://dublette.espadat.com/#/cli-reference) - All options documented
+- [How It Works](https://dublette.espadat.com/#/how-it-works/perceptual-hashing) - Perceptual hashing explained
 
 ## Requirements
 
@@ -56,5 +56,5 @@ Full documentation available at [dublette.sripwoud.xyz](https://dublette.sripwou
 
 ## Community
 
-- [Documentation](https://dublette.sripwoud.xyz)
+- [Documentation](https://dublette.espadat.com)
 - [Report Issues](https://github.com/sripwoud/dublette/issues)
