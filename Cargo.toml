@@ -3,7 +3,7 @@ name = "dublette"
 version = "0.5.2"
 edition = "2024"
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/sripwoud/dublette"
+repository = "https://github.com/espadat-studio/dublette"
 description = "Deduplicate images, videos, and audio using perceptual hashing and acoustic fingerprints"
 
 [dependencies]
